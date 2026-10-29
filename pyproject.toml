@@ -1,6 +1,6 @@
 [project]
 name = "comfyui-pose-gallery"
-version = "0.1.0"
+version = "0.2.0"
 description = "Online pose-reference gallery for ComfyUI with Chinese and Japanese sources."
 readme = "README.md"
 requires-python = ">=3.10"

@@ -1,112 +1,111 @@
-# ComfyUI Pose Gallery · 在线姿势图库
+# ComfyUI Pose Gallery
 
-在 ComfyUI 节点中打开姿势图库，按分类、关键词和视角选图，将参考图直接输出为 `IMAGE`，连接后续工作流。
+**English** · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
 
-使用 [Anhao 中文姿势图库](https://ai-pose-gallery.anhao.app/) 的在线目录与图片；自动模式下，中文资源无法访问时切换到[日文原站](https://ai-pose-gallery.pages.dev/)。安装时无需下载整套图库、额外模型或前端构建依赖。
+Browse online mannequin pose references inside ComfyUI, choose a pose and camera angle, and send the original image to your workflow as `IMAGE`.
 
-## 安装
+The picker uses the existing [Chinese gallery by Anhao](https://ai-pose-gallery.anhao.app/) and [Japanese original](https://ai-pose-gallery.pages.dev/). Resources are fetched on demand; installation does not download the complete image library or any models.
 
-在 ComfyUI 的 `custom_nodes` 目录中执行：
+## Installation
+
+Run this from your ComfyUI `custom_nodes` directory:
 
 ```bash
 git clone https://github.com/icefox57/ComfyUI-Pose-Gallery.git
 ```
 
-目录应类似：
+The resulting path should be `ComfyUI/custom_nodes/ComfyUI-Pose-Gallery/__init__.py`. Restart ComfyUI, then hard-refresh the browser (`Ctrl+F5` on Windows).
 
-```text
-ComfyUI/
-└── custom_nodes/
-    └── ComfyUI-Pose-Gallery/
-        ├── __init__.py
-        └── web/
-```
+A standard ComfyUI installation already provides the required Python dependencies. No separate PyTorch installation or `npm install` is needed. Windows portable users should install under `ComfyUI_windows_portable/ComfyUI/custom_nodes/` and use the bundled `python_embeded/python.exe` for Python commands.
 
-重启 ComfyUI，然后强制刷新浏览器页面（Windows：`Ctrl+F5`）。正常安装的 ComfyUI 已提供所需的 Python 运行依赖，无需为本插件单独安装 PyTorch，也无需运行 `npm install`。
+To update a Git installation, run `git pull` inside the plugin directory, then restart ComfyUI and refresh the browser.
 
-Windows 便携版请将仓库放入 `ComfyUI_windows_portable/ComfyUI/custom_nodes/`。若需运行开发检查，使用便携版自带的 `python_embeded/python.exe`，不要调用另一个 Python 环境。
+## Pick an image
 
-## 选图与使用
+1. Search for **Pose Gallery** in the node menu and add the node.
+2. Choose `language`: `zh` for 中文, `en` for English, or `ja` for 日本語. Existing workflows default to Chinese.
+3. Click **Browse poses**. Search or filter by system, category, and angle. Click a card to preview the original or choose another angle of the same pose.
+4. Click **Use this image**, connect the node's `image` output, and run the workflow.
 
-1. 在节点搜索中输入 `Pose Gallery`，添加姿势图库节点。
-2. 点击 **选择姿势 / Browse poses**，打开在线姿势图库。
-3. 用关键词、体系、动作分类和视角缩小范围，点击姿势卡片查看原图、切换角度，再点击 **使用这张姿势 / Use image**。
-4. 将节点的 `image` 输出连接到后续节点，运行工作流。
+The gallery displays 24 pose groups at a time. Use **Load more**, **Refresh**, and **Clear filters** to browse. `Esc` closes the picker; controls also support `Tab` and `Enter`.
 
-`pose_id` 保存的是选中图片的稳定 ID，随工作流一起保存。也可直接填写，例如 `full_sexy_P001_front`。每个 ID 对应一张指定视角的图片。
+The selected image ID, source mode, and language are saved with the workflow. You can enter an ID directly, such as `full_sexy_P001_front`; each ID identifies one image at a specific angle.
 
-图库按姿势分组显示，每批 24 组；点击 **加载更多** 继续浏览。可在 **在线数据源 / Source** 切换来源，点击 **刷新** 重读目录，或用 **清除筛选** 恢复全部结果。`Esc` 关闭图库，也支持 `Tab` 和 `Enter` 操作。
+## Language and sources
 
-| 输入 | 说明 |
+The node and picker support Chinese, English, and Japanese. Interface controls and standard filter labels are translated locally. Pose titles remain in the selected upstream catalogue's original language; there is no separate English image source.
+
+| UI language | `auto` source order on a cache miss |
 | --- | --- |
-| `pose_id` | 姿势图片 ID；通过图库选图自动填写，也支持手动输入 |
-| `source` = `auto` | 优先中文；目录或所选图片获取失败时尝试日文资源 |
-| `source` = `zh` | 仅使用中文站点，失败时报告错误 |
-| `source` = `ja` | 仅使用日文站点，失败时报告错误 |
+| 中文 (`zh`, default) | Chinese → Japanese |
+| English (`en`) | Chinese → Japanese |
+| 日本語 (`ja`) | Japanese → Chinese |
 
-| 输出 | 类型 | 用途 |
+Changing the UI language resets `source` to `auto`. You can then choose `zh` or `ja` to use one source strictly. Manual modes do not fall back until you change the language or select `auto` again.
+
+Fallback applies to catalogues and individual images. The alternate source is asked for the **same image ID**; an unavailable image is never replaced with a different pose.
+
+## Inputs and outputs
+
+| Input | Meaning |
+| --- | --- |
+| `pose_id` | Selected image ID; filled by the picker or entered manually |
+| `source` | `auto`, Chinese only (`zh`), or Japanese only (`ja`) |
+| `language` | Chinese (`zh`), English (`en`), or Japanese (`ja`); default `zh` |
+
+| Output | Type | Meaning |
 | --- | --- | --- |
-| `image` | `IMAGE` | 原始参考图，可连接预览、预处理或图像参考节点 |
-| `pose_name` | `STRING` | 所选姿势名称；未缓存目录时返回图片 ID |
-| `source_url` | `STRING` | 本次获取图片的在线来源地址 |
+| `image` | `IMAGE` | Original reference image |
+| `pose_name` | `STRING` | Pose title and angle; image ID if no catalogue is cached |
+| `source_url` | `STRING` | Online source URL of the returned image |
 
-推荐连接方式：
+Example connections:
 
 ```text
 Pose Gallery → Preview Image
-
-Pose Gallery → DWPose / OpenPose 预处理器 → 匹配的 ControlNet 工作流
-
-Pose Gallery → 支持图像参考的工作流
+Pose Gallery → DWPose / OpenPose preprocessor → compatible ControlNet workflow
+Pose Gallery → an image-reference workflow
 ```
 
-**图库图片是人体素体参考图，不是 OpenPose 骨骼控制图。** 使用 OpenPose ControlNet 时，应先通过相应预处理器提取姿势，并选用与底模兼容的 ControlNet 模型。预处理器、模型及图像参考节点需由你现有的 ComfyUI 环境提供。
+**These are mannequin reference images, not OpenPose skeleton maps.** For OpenPose ControlNet, extract the pose with a suitable preprocessor and use a ControlNet model compatible with your base model. Preprocessors and models come from your existing ComfyUI setup.
 
-## 示例工作流
+## Example workflows
 
-- [选图并预览](examples/pose_gallery_preview.json)：下载 JSON 后拖入 ComfyUI，可直接运行，也可打开图库重新选图。
-- [API 请求示例](examples/pose_gallery_api.json)：包含 `PoseGallery → PreviewImage` 的 API prompt。
+- [Picker and image preview](examples/pose_gallery_preview.json): drag the JSON into ComfyUI and run it, or open the picker to change the image.
+- [API request](examples/pose_gallery_api.json): a `PoseGallery → PreviewImage` prompt.
 
-API 示例可在仓库根目录执行：
+From the repository directory:
 
 ```bash
 curl -X POST http://127.0.0.1:8188/prompt -H "Content-Type: application/json" --data-binary @examples/pose_gallery_api.json
 ```
 
-若 ComfyUI 运行在其他地址或端口，请替换 URL。
+Replace the address and port if your instance uses different ones.
 
-## 在线资源与缓存
+## Network and cache
 
-插件通过 ComfyUI 后端请求在线目录与图片，因此远程部署时需要**运行 ComfyUI 的服务器**可以访问资源站点。浏览器能打开站点，不代表后端网络也能访问。
+Requests are made by the ComfyUI backend. The computer or server **running ComfyUI** must be able to reach the gallery sites, even if your browser can open them.
 
-- 不在安装或启动时批量下载图库。
-- 浏览时按需加载缩略图；选中或运行时按需获取原图。
-- 本地缓存减少重复获取。默认缓存位于 ComfyUI 用户目录下的 `pose_gallery/cache`；可用环境变量 `POSE_GALLERY_CACHE_DIR` 指定其他位置。较旧 ComfyUI 未提供用户目录接口时，使用系统临时目录下的 `comfyui_pose_gallery/cache`。
-- 原图按来源与 ID 缓存，优先复用已下载文件；未命中缓存时，`auto` 按中文、日文的顺序请求。在线目录缓存一小时；来源失败后会短暂避让，避免反复等待。
-- 自动模式会尝试从备用站点获取相同 ID 的图片，不会悄悄换成其他姿势。手动指定来源时不自动切换。
-- 首次浏览与首次获取图片需要联网；缓存并不提供完整离线图库。
+Thumbnails load on demand. Originals are fetched when previewed, selected, or executed. Each source reuses its own cached images first; the preferred source is checked before the alternate source, even if the alternate image is already cached. Catalogues are cached for one hour; the last catalogue can still be shown when online sources are unavailable. This is not a complete offline library.
 
-## 常见问题
+The default cache is `pose_gallery/cache` under the ComfyUI user directory. Set `POSE_GALLERY_CACHE_DIR` to change it. Older versions without the user-directory API use `comfyui_pose_gallery/cache` under the system temporary directory.
 
-**搜不到节点，或没有图库按钮**
+If loading fails, use **Refresh**, try the other source, and check the backend's network or proxy settings. The plugin does not change system network settings. If the node or picker is missing, check for an extra nested ZIP directory, restart ComfyUI, hard-refresh the browser, and inspect the console for import errors.
 
-检查插件是否位于 `custom_nodes/ComfyUI-Pose-Gallery`，避免下载 ZIP 后多嵌套一层目录。重启 ComfyUI 并强制刷新浏览器，查看 ComfyUI 控制台是否报告导入错误。
+## Contribute pose resources
 
-**目录或图片加载失败**
+**Everyone is welcome to contribute more high-quality mannequin pose reference resources.** Open a [GitHub Issue](https://github.com/icefox57/ComfyUI-Pose-Gallery/issues) to suggest a resource or send a pull request for a source integration. Include:
 
-先选择 `auto`，或手动切换到 `ja`。确认 ComfyUI 后端能访问对应站点。代理设置应作用于运行 ComfyUI 的进程；插件不会自动改变系统网络设置。第三方站点的可用性与内容由各自维护者决定。
+- A few sample links and a description of the poses, resolution, and available camera angles.
+- The creator's name and original source URL.
+- The usage and redistribution licence, or the creator's permission to host and distribute the images.
+- Available metadata, such as stable IDs, pose names, categories, and angle labels.
 
-**已保存的工作流换电脑后还能使用吗？**
+Original work and properly authorised resources are welcome. Clear silhouettes, consistent framing, useful resolution, and multiple views of the same pose are especially helpful. Please do not upload existing gallery images whose terms prohibit redistribution. To propose an online source, link to it rather than copying its entire library into this repository.
 
-可以。安装插件后，节点根据保存的 `pose_id` 和 `source` 重新获取图片。图片本身不嵌入工作流；首次运行仍需要访问相应在线资源。
+## Development and validation
 
-**为什么日文备用源显示日文名称？**
-
-日文站点使用原始日文目录。切换来源后保留同一图片 ID，但名称和分类可能使用日文。
-
-## 开发
-
-本项目使用 Python 节点和原生 JavaScript 扩展，无前端构建步骤。开发检查：
+The node uses Python and build-free JavaScript. Use a Python environment containing the normal ComfyUI dependencies and a recent Node.js:
 
 ```bash
 python -m unittest discover -s tests -v
@@ -114,21 +113,13 @@ node --test tests/frontend.test.mjs
 node --check web/pose_gallery.js
 ```
 
-已在 Windows 的隔离 ComfyUI 0.42.1 实例中验证真实在线资源、日文备用源、自动切换及 `PoseGallery → PreviewImage` 队列执行；19 项后端单元检查和 12 项前端 DOM 模拟检查通过。浏览器中的视觉与手动交互仍待验证，检查范围见 [验证记录](docs/VALIDATION.md)。数据字段与上游来源说明见 [docs/UPSTREAM.md](docs/UPSTREAM.md)。
+Previous real-instance checks and their limits are recorded in [docs/VALIDATION.md](docs/VALIDATION.md); they do not establish browser visual or manual interaction acceptance for every version. See [upstream integration notes](docs/UPSTREAM.md) for data formats and [the changelog](CHANGELOG.md) for changes.
 
-## 协议与致谢
+## Licence and credits
 
-本插件源代码以 [MIT](LICENSE) 协议发布。MIT **不覆盖在线图库的图片或原始数据**，本仓库不打包、再发布整套素材。
+The plugin code is [MIT licensed](LICENSE). This licence **does not cover third-party images or original metadata**. The repository does not redistribute the existing image collection.
 
-- 中文图库与汉化：[Anhao / ai-pose-gallery-zh](https://github.com/anhao/ai-pose-gallery-zh)
-- 原始图库与图片作者：[ギア / @giaaibusi](https://x.com/giaaibusi)，[日文原站](https://ai-pose-gallery.pages.dev/)
+- Chinese gallery and localisation: [Anhao / ai-pose-gallery-zh](https://github.com/anhao/ai-pose-gallery-zh).
+- Original gallery and images: [ギア / @giaaibusi](https://x.com/giaaibusi), [Japanese website](https://ai-pose-gallery.pages.dev/).
 
-使用素材前请阅读原作者网站的当前条款。原站说明允许免费参考、编辑与商业作品制作，但禁止图片数据本身（包括加工后图片）的再分发、转载和转售。原图权利归其各自权利人所有。图库含成人向姿势分类，请按你的使用场景自行选择。
-
-## English
-
-An online pose-reference picker for ComfyUI. Install this repository under `ComfyUI/custom_nodes`, restart ComfyUI, hard-refresh the browser, and add **Pose Gallery**. Open its gallery, choose a pose and camera angle, and connect the `IMAGE` output to your workflow.
-
-`auto` prefers the Chinese gallery and falls back to the original Japanese source for catalogue or image failures. `zh` and `ja` select one source strictly. Images are fetched on demand and cached; the full asset collection is never installed. Reference images are not OpenPose maps: use a suitable pose preprocessor before an OpenPose ControlNet workflow.
-
-The plugin code is MIT licensed. Third-party images and metadata have separate terms; consult the original creator's website. No image redistribution rights are granted by this repository.
+Read the original creator's current terms before use. The original site permits reference use, editing, and creating commercial artwork, but prohibits redistribution, reposting, or resale of the image data itself, including modified images. Rights remain with the respective creators. The gallery includes adult-oriented pose categories.

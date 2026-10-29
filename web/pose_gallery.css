@@ -59,6 +59,7 @@
 .pg-filter span { font-size: 11px; color: var(--pg-muted); }
 .pg-filter select { width: 100%; font-size: 12px; }
 .pg-filter.pg-source { flex-grow: 0; flex-basis: 185px; }
+.pg-filter.pg-language { flex: 0 0 112px; }
 .pg-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-top: 10px; font-size: 12px; }
 .pg-count { font-weight: 650; }
 .pg-source-status { color: var(--pg-muted); }
@@ -81,7 +82,7 @@
 .pg-card-name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 34px; line-height: 17px; font-size: 12px; font-weight: 600; }
 .pg-card-meta { display: block; color: var(--pg-muted); font-size: 10px; margin-top: 5px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .pg-id { font-family: Consolas, "SFMono-Regular", monospace; font-size: 10px; color: var(--pg-muted); overflow-wrap: anywhere; }
-.pg-image-error::after { content: "缩略图加载失败 · 点击重试"; position: absolute; inset: 35% 8px auto; text-align: center; font-size: 11px; color: var(--pg-muted); }
+.pg-image-error::after { content: attr(data-error); position: absolute; inset: 35% 8px auto; text-align: center; font-size: 11px; color: var(--pg-muted); }
 .pg-message { grid-column: 1/-1; padding: 55px 20px; text-align: center; color: var(--pg-muted); font-size: 13px; }
 .pg-message p { margin: 0 0 12px; white-space: pre-wrap; }
 .pg-more { display: block; width: 100%; margin-top: 16px; }

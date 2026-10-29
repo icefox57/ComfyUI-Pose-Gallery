@@ -11,7 +11,10 @@ import numpy as np
 import torch
 from aiohttp import web
 
-from .pose_gallery_service import GalleryError, GalleryInputError, asset_to_image, get_service, validate_id, validate_source
+from .pose_gallery_service import (
+    GalleryError, GalleryInputError, asset_to_image, get_service,
+    validate_id, validate_language, validate_source,
+)
 
 
 LOGGER = logging.getLogger(__name__)
@@ -23,7 +26,8 @@ class PoseGallery:
         return {
             "required": {
                 "pose_id": ("STRING", {"default": "", "tooltip": "Use Browse poses to select an online reference image."}),
-                "source": (["auto", "zh", "ja"], {"default": "auto", "tooltip": "auto: Chinese first, Japanese fallback."}),
+                "source": (["auto", "zh", "ja"], {"default": "auto", "tooltip": "auto: primary source follows language; the other site is the fallback."}),
+                "language": (["zh", "en", "ja"], {"default": "zh", "tooltip": "Gallery interface language. Japanese prefers the Japanese source; Chinese and English prefer Chinese."}),
             }
         }
 
@@ -31,20 +35,21 @@ class PoseGallery:
     RETURN_NAMES = ("image", "pose_name", "source_url")
     FUNCTION = "load_pose"
     CATEGORY = "image/Pose Gallery"
-    DESCRIPTION = "Browse online pose reference images. Chinese source first, Japanese fallback; downloads only the selected original."
+    DESCRIPTION = "Browse online pose references in Chinese, English, or Japanese. Automatic source priority follows the selected language; downloads only the selected original."
 
-    def load_pose(self, pose_id, source="auto"):
+    def load_pose(self, pose_id, source="auto", language="zh"):
         service = get_service()
-        asset = service.get_image(pose_id, "full", source)
+        asset = service.get_image(pose_id, "full", source, language)
         image = asset_to_image(asset)
         tensor = torch.from_numpy(np.array(image, dtype=np.float32) / 255.0).unsqueeze(0)
-        name = service.pose_name(pose_id, source)
-        if source == "auto" and asset.source == "ja":
-            LOGGER.info("Pose Gallery: using the Japanese source for %s", pose_id)
+        name = service.pose_name(pose_id, source, language)
+        preferred = "ja" if language == "ja" else "zh"
+        if source == "auto" and asset.source != preferred:
+            LOGGER.info("Pose Gallery: using fallback %s source for %s", asset.source, pose_id)
         return (tensor, name, asset.url)
 
     @classmethod
-    def VALIDATE_INPUTS(cls, pose_id=None, source="auto"):
+    def VALIDATE_INPUTS(cls, pose_id=None, source="auto", language="zh"):
         try:
             # ComfyUI passes None for a linked input whose upstream value is
             # not available during validation. Runtime loading validates it.
@@ -52,16 +57,18 @@ class PoseGallery:
                 validate_id(pose_id)
             if source is not None:
                 validate_source(source)
+            if language is not None:
+                validate_language(language)
             return True
         except GalleryError as error:
             return str(error)
 
     @classmethod
-    def IS_CHANGED(cls, pose_id, source="auto"):
+    def IS_CHANGED(cls, pose_id, source="auto", language="zh"):
         try:
-            return get_service().image_fingerprint(pose_id, source)
+            return get_service().image_fingerprint(pose_id, source, language)
         except GalleryError:
-            return f"invalid:{source}:{pose_id}"
+            return f"invalid:{language}:{source}:{pose_id}"
 
 
 def _json_error(error, status=502):
@@ -87,7 +94,8 @@ def register_routes():
     async def gallery_catalog(request):
         try:
             source = validate_source(request.query.get("source", "auto"))
-            result = await asyncio.to_thread(get_service().get_catalog, source, request.query.get("refresh") == "1")
+            language = validate_language(request.query.get("language", "zh"))
+            result = await asyncio.to_thread(get_service().get_catalog, source, request.query.get("refresh") == "1", language)
             return web.json_response(result, headers={"Cache-Control": "no-store"})
         except GalleryInputError as error:
             return _json_error(error, 400)
@@ -102,10 +110,11 @@ def register_routes():
         try:
             pose_id = validate_id(request.query.get("id", ""))
             source = validate_source(request.query.get("source", "auto"))
+            language = validate_language(request.query.get("language", "zh"))
             kind = request.query.get("kind", "thumb")
             if kind not in ("thumb", "full"):
                 return _json_error("Unknown image kind.", 400)
-            asset = await asyncio.to_thread(get_service().get_image, pose_id, kind, source)
+            asset = await asyncio.to_thread(get_service().get_image, pose_id, kind, source, language)
             body = await asyncio.to_thread(_browser_image, asset, kind)
             return web.Response(
                 body=body,
@@ -142,7 +151,8 @@ def register_routes():
                 return _json_error("Expected a pose selection object.", 400)
             pose_id = validate_id(payload.get("id", ""))
             source = validate_source(payload.get("source", "auto"))
-            result = await asyncio.to_thread(get_service().select, pose_id, source)
+            language = validate_language(payload.get("language", "zh"))
+            result = await asyncio.to_thread(get_service().select, pose_id, source, language)
             return web.json_response(result)
         except (ValueError, TypeError):
             return _json_error("Invalid selection JSON.", 400)

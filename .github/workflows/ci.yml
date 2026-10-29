@@ -16,5 +16,6 @@ jobs:
       - run: python -m pip install Pillow numpy aiohttp
       - run: python -m unittest discover -s tests -v
       - run: node --check web/pose_gallery.js
+      - run: node --check web/i18n.js
       - run: node --test tests/frontend.test.mjs
       - run: python -m compileall -q __init__.py nodes.py pose_gallery_service.py

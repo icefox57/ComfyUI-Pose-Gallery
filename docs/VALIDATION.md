@@ -2,6 +2,17 @@
 
 Date: 2026-10-29.
 
+## 0.2.0 language update
+
+- 29 Python checks and 21 JavaScript DOM-double checks passed, including both fallback directions, cached-secondary priority, all three translation dictionaries, language persistence, and legacy workflows.
+- Using the same ComfyUI Python dependencies, a registration stub loaded the updated node and the real catalogue, image, and selection routes were exercised over loopback in all three languages. Japanese selected `ja`; Chinese and English selected `zh`. Invalid languages returned HTTP 400.
+- Cached real upstream catalogues each supplied 1,439 entries. Cached real originals produced float32 `IMAGE` tensors shaped `[1, 1200, 900, 3]`; changing language changed the node fingerprint. No external requests or model downloads were needed for these update checks.
+- These checks do not establish live browser layout, manual interaction, or a new full-ComfyUI queue run for 0.2.0. The original full-instance result is recorded below.
+
+## Initial 0.1.0 release
+
+The following results document the initial release.
+
 ## Environment
 
 An isolated Windows instance running Python 3.10.11, ComfyUI 0.42.1, and the ComfyUI frontend package 1.55.18 in CPU mode. No model downloads were required.

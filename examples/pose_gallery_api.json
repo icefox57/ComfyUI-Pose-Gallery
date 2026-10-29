@@ -4,7 +4,8 @@
       "class_type": "PoseGallery",
       "inputs": {
         "pose_id": "full_sexy_P001_front",
-        "source": "auto"
+        "source": "auto",
+        "language": "zh"
       }
     },
     "2": {

@@ -44,6 +44,23 @@ CATALOG_TTL_SECONDS = 3600
 FAILURE_COOLDOWN_SECONDS = 30
 REQUEST_TIMEOUT_SECONDS = 10
 ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
+WARNING_MESSAGES = {
+    "zh": {
+        "zh": "中文版数据源暂时无法访问，已切换到日文版。",
+        "ja": "日文版数据源暂时无法访问，已切换到中文版。",
+        "stale": "在线数据源暂时无法访问，正在显示上次缓存的图库目录。",
+    },
+    "en": {
+        "zh": "Chinese source is unavailable; using the Japanese source.",
+        "ja": "Japanese source is unavailable; using the Chinese source.",
+        "stale": "Online sources are unavailable; showing the last cached catalogue.",
+    },
+    "ja": {
+        "zh": "中国語のデータソースに接続できないため、日本語版に切り替えました。",
+        "ja": "日本語のデータソースに接続できないため、中国語版に切り替えました。",
+        "stale": "オンラインデータに接続できないため、保存済みの一覧を表示しています。",
+    },
+}
 
 
 class GalleryError(RuntimeError):
@@ -58,6 +75,12 @@ def validate_source(source: str) -> str:
     if not isinstance(source, str) or source not in ("auto", "zh", "ja"):
         raise GalleryInputError("Unknown source. Choose auto, zh, or ja.")
     return source
+
+
+def validate_language(language: str) -> str:
+    if not isinstance(language, str) or language not in ("zh", "en", "ja"):
+        raise GalleryInputError("Unknown language. Choose zh, en, or ja.")
+    return language
 
 
 def validate_id(pose_id: str) -> str:
@@ -95,7 +118,7 @@ def fetch_bytes(url: str, max_bytes: int) -> bytes:
     request = Request(
         url,
         headers={
-            "User-Agent": "ComfyUI-Pose-Gallery/1.0 (+https://github.com/icefox57/ComfyUI-Pose-Gallery)",
+            "User-Agent": "ComfyUI-Pose-Gallery/0.2.0 (+https://github.com/icefox57/ComfyUI-Pose-Gallery)",
             "Accept-Encoding": "identity",
         },
     )
@@ -177,9 +200,12 @@ class GalleryService:
         with self._state_lock:
             return self._locks.setdefault(key, threading.Lock())
 
-    def _candidates(self, source):
+    def _candidates(self, source, language="zh"):
         validate_source(source)
-        return ("zh", "ja") if source == "auto" else (source,)
+        validate_language(language)
+        if source != "auto":
+            return (source,)
+        return ("ja", "zh") if language == "ja" else ("zh", "ja")
 
     def _available(self, source):
         with self._state_lock:
@@ -274,8 +300,8 @@ class GalleryService:
             self._catalogs[source] = result
         return result
 
-    def get_catalog(self, source="auto", refresh=False):
-        candidates = self._candidates(source)
+    def get_catalog(self, source="auto", refresh=False, language="zh"):
+        candidates = self._candidates(source, language)
         errors = []
         with self._lock("catalog"):
             if refresh:
@@ -285,7 +311,7 @@ class GalleryService:
             for candidate in candidates:
                 cached = self._read_catalog(candidate)
                 if cached and not refresh and self.clock() - cached["fetched"] < CATALOG_TTL_SECONDS:
-                    return self._catalog_response(cached, candidate, source, False)
+                    return self._catalog_response(cached, candidate, source, False, language)
                 if not self._available(candidate):
                     errors.append(f"{candidate}: temporarily unavailable")
                     continue
@@ -301,24 +327,31 @@ class GalleryService:
                     with self._state_lock:
                         self._catalogs[candidate] = cached
                         self._failures.pop(candidate, None)
-                    return self._catalog_response(cached, candidate, source, False)
+                    return self._catalog_response(cached, candidate, source, False, language)
                 except (GalleryError, OSError, ValueError, UnicodeError) as error:
                     self._failed(candidate)
                     errors.append(f"{candidate}: {error}")
             for candidate in candidates:
                 cached = self._read_catalog(candidate)
                 if cached:
-                    return self._catalog_response(cached, candidate, source, True)
+                    return self._catalog_response(cached, candidate, source, True, language)
         raise GalleryError("Unable to load the pose gallery. Check your network and retry. " + "; ".join(errors))
 
     @staticmethod
-    def _catalog_response(cached, candidate, requested, stale):
+    def _catalog_response(cached, candidate, requested, stale, language="zh"):
+        preferred = ("ja" if language == "ja" else "zh") if requested == "auto" else requested
+        fallback_used = requested == "auto" and candidate != preferred
+        messages = WARNING_MESSAGES[language]
         warnings = []
-        if requested == "auto" and candidate == "ja":
-            warnings.append("Chinese source is unavailable; using the Japanese source.")
+        if fallback_used:
+            warnings.append(messages[preferred])
         if stale:
-            warnings.append("Online sources are unavailable; showing the last cached catalogue.")
-        return {"items": cached["items"], "source": candidate, "stale": stale, "warning": " ".join(warnings)}
+            warnings.append(messages["stale"])
+        return {
+            "items": cached["items"], "source": candidate, "stale": stale,
+            "warning": " ".join(warnings), "language": language,
+            "preferred_source": preferred, "fallback_used": fallback_used,
+        }
 
     def _asset_path(self, pose_id, kind, source):
         extension = "jpg" if kind == "thumb" else "png"
@@ -335,22 +368,23 @@ class GalleryService:
         except (OSError, GalleryError):
             return None
 
-    def get_image(self, pose_id, kind="full", source="auto"):
+    def get_image(self, pose_id, kind="full", source="auto", language="zh"):
         validate_id(pose_id)
-        candidates = self._candidates(source)
+        candidates = self._candidates(source, language)
         if kind not in ("thumb", "full"):
             raise GalleryInputError("Unknown image kind. Choose thumb or full.")
         errors = []
-        with self._lock((pose_id, kind, source)):
-            # Reuse a previously selected original even when neither site is online.
+        with self._lock(("asset", pose_id, kind)):
+            # Check each source in policy order, including its network attempt,
+            # before considering the next source's cache. A cached fallback
+            # must not mask a newly chosen primary source.
             for candidate in candidates:
                 cached = self._read_asset(pose_id, kind, candidate)
                 if cached:
                     return cached
-            if kind == "thumb":
-                # A restored workflow can preview its selected pose offline,
-                # even if the small thumbnail had never been requested before.
-                for candidate in candidates:
+                if kind == "thumb":
+                    # A restored workflow can preview its selected pose offline,
+                    # even if its small thumbnail had never been requested.
                     original = self._read_asset(pose_id, "full", candidate)
                     if original:
                         image = _decode_image(original.data)
@@ -360,7 +394,6 @@ class GalleryService:
                         data = buffer.getvalue()
                         _atomic_write(self._asset_path(pose_id, "thumb", candidate), data)
                         return ImageAsset(data, candidate, original.url, image.width, image.height, True)
-            for candidate in candidates:
                 if not self._available(candidate):
                     errors.append(f"{candidate}: temporarily unavailable")
                     continue
@@ -377,8 +410,8 @@ class GalleryService:
                     errors.append(f"{candidate}: {error}")
         raise GalleryError(f"Could not load pose {pose_id}. The same pose was tried on all selected sources. " + "; ".join(errors))
 
-    def pose_name(self, pose_id, source):
-        for candidate in self._candidates(source):
+    def pose_name(self, pose_id, source="auto", language="zh"):
+        for candidate in self._candidates(source, language):
             cached = self._read_catalog(candidate)
             if cached:
                 for item in cached["items"]:
@@ -386,29 +419,35 @@ class GalleryService:
                         return f"{item['name']} · {item['angle']}"
         return pose_id
 
-    def select(self, pose_id, source="auto"):
-        asset = self.get_image(pose_id, "full", source)
+    def select(self, pose_id, source="auto", language="zh"):
+        asset = self.get_image(pose_id, "full", source, language)
+        preferred = self._candidates(source, language)[0]
         return {
             "id": pose_id,
             "source": asset.source,
             "source_url": asset.url,
-            "name": self.pose_name(pose_id, source),
+            "name": self.pose_name(pose_id, source, language),
             "width": asset.width,
             "height": asset.height,
             "cached": asset.cached,
+            "language": language,
+            "preferred_source": preferred,
+            "fallback_used": source == "auto" and asset.source != preferred,
         }
 
-    def image_fingerprint(self, pose_id, source="auto"):
+    def image_fingerprint(self, pose_id, source="auto", language="zh"):
         """Stable while the selection is unchanged; no network activity for hashing."""
         validate_id(pose_id)
-        for candidate in self._candidates(source):
+        candidates = self._candidates(source, language)
+        policy = f"{language}:{source}:{'>'.join(candidates)}"
+        for candidate in candidates:
             path = self._asset_path(pose_id, "full", candidate)
             try:
                 stat = path.stat()
-                return f"{candidate}:{pose_id}:{stat.st_mtime_ns}:{stat.st_size}"
+                return f"{policy}:{candidate}:{pose_id}:{stat.st_mtime_ns}:{stat.st_size}"
             except OSError:
                 continue
-        return f"{source}:{pose_id}:not-cached"
+        return f"{policy}:{pose_id}:not-cached"
 
 
 _SERVICE = None
