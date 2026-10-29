@@ -58,6 +58,23 @@ Fallback applies to catalogues and individual images. The alternate source is as
 | `image` | `IMAGE` | Original reference image |
 | `pose_name` | `STRING` | Pose title and angle; image ID if no catalogue is cached |
 | `source_url` | `STRING` | Online source URL of the returned image |
+| `sd_prompt` | `STRING` | English SD-style tags describing the people and their poses |
+
+### SD pose prompt
+
+Version 0.3.0 adds `sd_prompt` as the fourth output. The first three outputs and their connection order remain unchanged; `pose_name` still provides the original catalogue title.
+
+`sd_prompt` is always a comma-separated English string, regardless of the UI language or selected source. It describes people counts and gender tags such as `1girl` and `1boy`, body positions, limb placement, and necessary interactions. It does not add mannequin, appearance, clothing, background, style, quality, or camera descriptions.
+
+For example, `full_sexy_P001_front` returns:
+
+```text
+1girl, solo, standing, contrapposto, hand on hip, other arm behind head, one knee bent
+```
+
+To use it with an existing SD workflow, right-click your **CLIP Text Encode (Prompt)** node, choose **Convert Widget to Input → text**, and connect `sd_prompt` to that `text` input. Use the encoder and model already configured in your workflow.
+
+The current 288 pose groups / 1,439 views have curated action tags checked against thumbnails and catalogue metadata. Views of the same pose share their action tags. This is a local tag lookup, not runtime image captioning: no VLM, external AI service, or extra model download is needed. A new upstream pose without a reviewed entry returns an empty string instead of an invented description.
 
 Example connections:
 
@@ -65,6 +82,7 @@ Example connections:
 Pose Gallery → Preview Image
 Pose Gallery → DWPose / OpenPose preprocessor → compatible ControlNet workflow
 Pose Gallery → an image-reference workflow
+Pose Gallery.sd_prompt → CLIP Text Encode.text
 ```
 
 **These are mannequin reference images, not OpenPose skeleton maps.** For OpenPose ControlNet, extract the pose with a suitable preprocessor and use a ControlNet model compatible with your base model. Preprocessors and models come from your existing ComfyUI setup.

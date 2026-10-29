@@ -118,7 +118,7 @@ def fetch_bytes(url: str, max_bytes: int) -> bytes:
     request = Request(
         url,
         headers={
-            "User-Agent": "ComfyUI-Pose-Gallery/0.2.0 (+https://github.com/icefox57/ComfyUI-Pose-Gallery)",
+            "User-Agent": "ComfyUI-Pose-Gallery/0.3.0 (+https://github.com/icefox57/ComfyUI-Pose-Gallery)",
             "Accept-Encoding": "identity",
         },
     )

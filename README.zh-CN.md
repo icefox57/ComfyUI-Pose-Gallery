@@ -58,6 +58,23 @@ git clone https://github.com/icefox57/ComfyUI-Pose-Gallery.git
 | `image` | `IMAGE` | 原始姿势参考图 |
 | `pose_name` | `STRING` | 姿势标题和角度；未缓存目录时返回图片 ID |
 | `source_url` | `STRING` | 本次输出图片的在线来源地址 |
+| `sd_prompt` | `STRING` | 描述人物数量和姿势的英文 SD 提示词标签 |
+
+### SD 姿势提示词
+
+0.3.0 在第四个输出位置新增 `sd_prompt`，前三个输出及其连接顺序不变。原有 `pose_name` 继续提供图库中的姿势名称。
+
+无论界面语言或数据源如何选择，`sd_prompt` 都使用英文逗号分隔标签，只描述 `1girl`、`1boy` 等人物数量和性别标签、身体姿态、肢体位置及必要互动，不添加人偶、外观、衣着、背景、风格、画质或镜头描述。
+
+例如，`full_sexy_P001_front` 输出：
+
+```text
+1girl, solo, standing, contrapposto, hand on hip, other arm behind head, one knee bent
+```
+
+接入已有 SD 工作流时，右键点击 **CLIP Text Encode (Prompt)** 节点，选择 **Convert Widget to Input → text**，再把 `sd_prompt` 连接到该 `text` 输入。继续使用工作流原有的文本编码器和模型即可。
+
+当前 288 组姿势／1,439 个视角使用逐组整理的动作标签，已结合缩略图和目录信息核对；同一姿势的不同视角共用动作标签。这是本地标签查询，不是运行时图片识别，无需 VLM、外部 AI 服务或额外模型下载。上游新增但尚未审核的姿势会返回空字符串，不编造描述。
 
 推荐连接方式：
 
@@ -65,6 +82,7 @@ git clone https://github.com/icefox57/ComfyUI-Pose-Gallery.git
 Pose Gallery → Preview Image
 Pose Gallery → DWPose / OpenPose 预处理器 → 匹配的 ControlNet 工作流
 Pose Gallery → 支持图像参考的工作流
+Pose Gallery.sd_prompt → CLIP Text Encode.text
 ```
 
 **图库图片是素体参考图，不是 OpenPose 骨骼控制图。** 使用 OpenPose ControlNet 时，应先用相应预处理器提取姿势，再选择与底模兼容的 ControlNet 模型。预处理器和模型由你现有的 ComfyUI 环境提供。

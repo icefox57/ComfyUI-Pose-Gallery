@@ -23,7 +23,7 @@ export const MESSAGES = Object.freeze({
     nodePreviewError: "{id} · 预览不可用，运行时仍会尝试读取缓存原图", nodePoseId: "姿势 ID", nodeSource: "数据源", nodeLanguage: "界面语言",
     poseIdTooltip: "所选姿势的稳定 ID，随工作流保存。", sourceTooltip: "auto 按界面语言自动选择主站与备份；zh / ja 固定使用对应站点。",
     languageTooltip: "切换语言会恢复自动数据源；日语优先日文站，中文和英语优先中文站。",
-    outputImage: "参考图", outputName: "姿势名称", outputUrl: "图片来源 URL",
+    outputImage: "参考图", outputName: "姿势名称", outputUrl: "图片来源 URL", outputSdPrompt: "SD 姿势提示词",
   },
   en: {
     title: "Pose Gallery", subtitle: "Choose a pose and view to send the original image into your workflow", close: "Close gallery",
@@ -47,7 +47,7 @@ export const MESSAGES = Object.freeze({
     nodePreviewError: "{id} · Preview unavailable; the cached original will still be tried when running", nodePoseId: "Pose ID", nodeSource: "Source", nodeLanguage: "UI language",
     poseIdTooltip: "The stable ID of the selected pose, saved with the workflow.", sourceTooltip: "auto follows the UI language and falls back to the other site; zh / ja use a fixed site.",
     languageTooltip: "Changing language restores automatic sources. Japanese prefers the Japanese site; Chinese and English prefer the Chinese site.",
-    outputImage: "Reference image", outputName: "Pose name", outputUrl: "Image source URL",
+    outputImage: "Reference image", outputName: "Pose name", outputUrl: "Image source URL", outputSdPrompt: "SD pose prompt",
   },
   ja: {
     title: "ポーズギャラリー", subtitle: "ポーズとアングルを選び、元画像をワークフローへ送信", close: "ギャラリーを閉じる",
@@ -71,7 +71,7 @@ export const MESSAGES = Object.freeze({
     nodePreviewError: "{id} · プレビューできません。実行時には保存済みの元画像も確認します", nodePoseId: "ポーズ ID", nodeSource: "取得元", nodeLanguage: "表示言語",
     poseIdTooltip: "選択したポーズの固定 ID。ワークフローに保存されます。", sourceTooltip: "auto は表示言語に応じて優先サイトを選び、接続できない場合は切り替えます。zh / ja は取得元を固定します。",
     languageTooltip: "言語を変更すると取得元は自動に戻ります。日本語では日本語サイト、中国語・英語では中国語サイトを優先します。",
-    outputImage: "参考画像", outputName: "ポーズ名", outputUrl: "画像の取得元 URL",
+    outputImage: "参考画像", outputName: "ポーズ名", outputUrl: "画像の取得元 URL", outputSdPrompt: "SD ポーズプロンプト",
   },
 });
 

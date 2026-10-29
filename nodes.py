@@ -11,6 +11,7 @@ import numpy as np
 import torch
 from aiohttp import web
 
+from .pose_prompts import get_sd_prompt
 from .pose_gallery_service import (
     GalleryError, GalleryInputError, asset_to_image, get_service,
     validate_id, validate_language, validate_source,
@@ -31,11 +32,11 @@ class PoseGallery:
             }
         }
 
-    RETURN_TYPES = ("IMAGE", "STRING", "STRING")
-    RETURN_NAMES = ("image", "pose_name", "source_url")
+    RETURN_TYPES = ("IMAGE", "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("image", "pose_name", "source_url", "sd_prompt")
     FUNCTION = "load_pose"
     CATEGORY = "image/Pose Gallery"
-    DESCRIPTION = "Browse online pose references in Chinese, English, or Japanese. Automatic source priority follows the selected language; downloads only the selected original."
+    DESCRIPTION = "Browse online pose references with language-aware source fallback. Outputs the image, pose name, source URL, and concise English SD people/action tags."
 
     def load_pose(self, pose_id, source="auto", language="zh"):
         service = get_service()
@@ -46,7 +47,7 @@ class PoseGallery:
         preferred = "ja" if language == "ja" else "zh"
         if source == "auto" and asset.source != preferred:
             LOGGER.info("Pose Gallery: using fallback %s source for %s", asset.source, pose_id)
-        return (tensor, name, asset.url)
+        return (tensor, name, asset.url, get_sd_prompt(pose_id))
 
     @classmethod
     def VALIDATE_INPUTS(cls, pose_id=None, source="auto", language="zh"):
@@ -153,6 +154,7 @@ def register_routes():
             source = validate_source(payload.get("source", "auto"))
             language = validate_language(payload.get("language", "zh"))
             result = await asyncio.to_thread(get_service().select, pose_id, source, language)
+            result["sd_prompt"] = get_sd_prompt(pose_id)
             return web.json_response(result)
         except (ValueError, TypeError):
             return _json_error("Invalid selection JSON.", 400)

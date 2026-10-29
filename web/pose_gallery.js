@@ -472,6 +472,7 @@ function ensureNodeSize(node) {
 }
 
 function attachNode(node) {
+  if (node.outputs?.length === 3) node.addOutput?.("sd_prompt", "STRING");
   if (states.has(node)) return;
   loadStyles();
   const state = { dialog: null, preview: null, language: normalizeLanguage(widget(node, "language")?.value) };
@@ -544,7 +545,7 @@ function attachNode(node) {
     }
     const defaultTitles = new Set(["Pose Gallery / 姿势图库", ...Object.keys(LANGUAGES).map((code) => t(code, "title"))]);
     if (!node.title || defaultTitles.has(node.title)) node.title = t(language, "title");
-    for (const [index, key] of ["outputImage", "outputName", "outputUrl"].entries()) {
+    for (const [index, key] of ["outputImage", "outputName", "outputUrl", "outputSdPrompt"].entries()) {
       if (node.outputs?.[index]) node.outputs[index].label = t(language, key);
     }
     updatePreview();

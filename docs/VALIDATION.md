@@ -2,6 +2,15 @@
 
 Date: 2026-10-29.
 
+## 0.3.0 SD pose prompts
+
+- 38 Python checks and 22 JavaScript DOM-double checks passed. Existing three-output workflows restore the fourth socket while preserving their original links.
+- Reviewed one representative front thumbnail per current pose group, using the existing cached first image and 287 additional thumbnails (4,631,015 bytes). The four annotation files cover all 288 groups and all 1,439 current image IDs. Other views reuse their group's action tags; they were not individually captioned.
+- Checked counts, visible limb positions, and neutral interactions. Upper-body annotations do not infer unseen leg positions. Known title/image discrepancies follow visible geometry; uncertain support positions use conservative wording.
+- A local SD1 CLIP tokenizer check placed every prompt below the 75-content-token budget. No captioning model, external AI service, or model download was used.
+- The same ComfyUI Python dependencies returned the four outputs in order and matching English tags under all three interface languages. Local HTTP selection responses also returned `sd_prompt`; the original image output remained `[1, 1200, 900, 3]`.
+- This verifies prompt delivery and annotation coverage, not SD image-generation quality or live browser acceptance. Those require testing with the user's chosen workflow and models.
+
 ## 0.2.0 language update
 
 - 29 Python checks and 21 JavaScript DOM-double checks passed, including both fallback directions, cached-secondary priority, all three translation dictionaries, language persistence, and legacy workflows.

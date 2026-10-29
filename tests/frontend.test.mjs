@@ -361,8 +361,9 @@ async function registeredNode(env, { id = "", source = "auto", language = "zh", 
       this.widgets = bareNode(id, source, language).widgets;
       if (legacy) this.widgets.pop();
       this.size = [310, 410];
-      this.outputs = [{ name: "image" }, { name: "pose_name" }, { name: "source_url" }];
+      this.outputs = [{ name: "image" }, { name: "pose_name" }, { name: "source_url" }, { name: "sd_prompt" }];
     }
+    addOutput(name, type) { this.outputs.push({ name, type }); }
     addWidget(type, name, value, callback) { const result = { type, name, value, callback }; this.widgets.push(result); return result; }
     addDOMWidget(name, type, element, options) { const result = { name, type, element, options }; this.widgets.push(result); return result; }
     setSize(size) { this.size = size; }
@@ -373,6 +374,21 @@ async function registeredNode(env, { id = "", source = "auto", language = "zh", 
   node.onNodeCreated();
   return node;
 }
+
+test("restoring a three-output workflow adds the SD socket without moving existing connections", async () => {
+  const env = environment();
+  const node = await registeredNode(env);
+  node.outputs.pop();
+  node.outputs[0].links = [10];
+  node.outputs[2].links = [20];
+  node.onConfigure();
+  node.onConfigure();
+  assert.deepEqual(node.outputs.map((output) => output.name), ["image", "pose_name", "source_url", "sd_prompt"]);
+  assert.deepEqual(node.outputs[0].links, [10]);
+  assert.deepEqual(node.outputs[2].links, [20]);
+  assert.equal(node.outputs[3].type, "STRING");
+  assert.equal(node.outputs[3].label, env.t("zh", "outputSdPrompt"));
+});
 
 test("all three message dictionaries have exact key/placeholder parity and English chrome has no CJK text", () => {
   const env = environment();
@@ -490,6 +506,8 @@ test("node language callback updates labels and previews in all languages, resto
     assert.equal(node.widgets.find((entry) => entry.type === "button").name, env.t(language, "browse"));
     assert.equal(node.widgets[0].label, env.t(language, "nodePoseId"));
     assert.equal(node.outputs[0].label, env.t(language, "outputImage"));
+    assert.equal(node.outputs[3].label, env.t(language, "outputSdPrompt"));
+    assert.deepEqual(node.outputs.map((output) => output.name), ["image", "pose_name", "source_url", "sd_prompt"]);
     const preview = node.widgets.find((entry) => entry.name === "pose_gallery_preview").element.querySelector("img");
     assert.equal(new URL(preview.src, "http://localhost").searchParams.get("language"), language);
   }

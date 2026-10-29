@@ -14,7 +14,8 @@
       "outputs": [
         { "name": "image", "type": "IMAGE", "links": [1], "slot_index": 0 },
         { "name": "pose_name", "type": "STRING", "links": null },
-        { "name": "source_url", "type": "STRING", "links": null }
+        { "name": "source_url", "type": "STRING", "links": null },
+        { "name": "sd_prompt", "type": "STRING", "links": null }
       ],
       "properties": { "Node name for S&R": "PoseGallery" },
       "widgets_values": ["full_sexy_P001_front", "auto", "zh"]

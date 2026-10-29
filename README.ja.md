@@ -58,6 +58,23 @@ Git でインストールした場合は、プラグインのディレクトリ�
 | `image` | `IMAGE` | 元のポーズ参考画像 |
 | `pose_name` | `STRING` | ポーズ名とアングル。カタログが未保存の場合は画像 ID |
 | `source_url` | `STRING` | 出力画像のオンライン取得元 URL |
+| `sd_prompt` | `STRING` | 人物の数と姿勢を表す英語の SD 用タグ |
+
+### SD 用ポーズプロンプト
+
+0.3.0 では、4 番目の出力として `sd_prompt` を追加しました。既存の 3 出力と接続順は変わらず、`pose_name` は引き続きカタログのポーズ名を返します。
+
+`sd_prompt` は、表示言語や取得元にかかわらず、カンマ区切りの英語タグです。`1girl`、`1boy` などの人物の数・性別タグ、身体の姿勢、手足の位置、必要な人物間の動作だけを記述します。人形、外見、服装、背景、画風、画質、カメラの説明は加えません。
+
+例えば、`full_sexy_P001_front` の出力は次のとおりです。
+
+```text
+1girl, solo, standing, contrapposto, hand on hip, other arm behind head, one knee bent
+```
+
+既存の SD ワークフローで使う場合は、**CLIP Text Encode (Prompt)** ノードを右クリックし、**Convert Widget to Input → text** を選び、`sd_prompt` をその `text` 入力に接続します。テキストエンコーダーとモデルは、ワークフローで使用しているものをそのまま利用できます。
+
+現在の 288 組／1,439 アングルには、サムネイルとカタログ情報を照合して整理した動作タグを用意しています。同じポーズの別アングルでは動作タグを共有します。実行時の画像認識ではなく、ローカルのタグ検索なので、VLM、外部 AI サービス、追加モデルのダウンロードは不要です。配信元に追加された未確認のポーズは、説明を推測せず空文字列を返します。
 
 接続例：
 
@@ -65,6 +82,7 @@ Git でインストールした場合は、プラグインのディレクトリ�
 Pose Gallery → Preview Image
 Pose Gallery → DWPose / OpenPose 前処理ノード → 対応する ControlNet ワークフロー
 Pose Gallery → 画像参照ワークフロー
+Pose Gallery.sd_prompt → CLIP Text Encode.text
 ```
 
 **ギャラリーの画像は素体の参考画像であり、OpenPose の骨格マップではありません。** OpenPose ControlNet には、適切な前処理でポーズを抽出し、ベースモデルに対応する ControlNet モデルを使用してください。前処理ノードとモデルは、お使いの ComfyUI 環境で用意します。
