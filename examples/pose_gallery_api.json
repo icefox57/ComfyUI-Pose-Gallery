@@ -1,0 +1,17 @@
+{
+  "prompt": {
+    "1": {
+      "class_type": "PoseGallery",
+      "inputs": {
+        "pose_id": "full_sexy_P001_front",
+        "source": "auto"
+      }
+    },
+    "2": {
+      "class_type": "PreviewImage",
+      "inputs": {
+        "images": ["1", 0]
+      }
+    }
+  }
+}
