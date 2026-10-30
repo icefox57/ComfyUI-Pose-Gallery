@@ -4,6 +4,10 @@
 
 在 ComfyUI 中浏览姿势参考图，将选中的图片和姿势提示词接入工作流。图库以中文版为基础，安装完成后浏览和运行均读取本地文件，无需联网。
 
+![姿势图库的筛选、缩略图、选中姿势和视角预览](docs/gallery-picker.png)
+
+在图库里搜索、筛选姿势并切换视角，选好后直接送入工作流。界面可切换为中文、英文或日文。
+
 ## 安装
 
 在 ComfyUI 的 `custom_nodes` 目录中执行以下命令，然后重启 ComfyUI，强制刷新浏览器（Windows 使用 `Ctrl+F5`）：
@@ -31,6 +35,10 @@ python scripts/setup_assets.py --download
 3. 搜索或按分类、角度筛选；点击卡片预览并选择视角，再点击**使用这张姿势**。
 4. 将 `image` 连接到参考图工作流。若要使用 `sd_prompt`，将 **CLIP Text Encode (Prompt)** 节点的 text 控件转换为输入并连接。
 
+![姿势图库节点连接 Preview Image，显示选中的姿势参考图](docs/pose-workflow.png)
+
+上图将 `image` 连接到 **Preview Image** 并运行工作流，显示的是节点输出的姿势参考图。也可以将它连接到姿势预处理器或其他参考图工作流。
+
 图库每次显示 24 组姿势，可点击加载更多，或按 `Esc` 关闭。选中的图片 ID 和语言会保存到工作流；也可直接填写 ID，例如 `full_sexy_P001_front`。
 
 | 输出 | 类型 | 用途 |
@@ -46,6 +54,6 @@ python scripts/setup_assets.py --download
 
 ## 来源、权利和贡献
 
-姿势图片原作：[ギア的日文图库](https://ai-pose-gallery.pages.dev/)（[作者](https://x.com/giaaibusi)）；中文目录：[Anhao 中文版](https://github.com/anhao/ai-pose-gallery-zh)。本插件代码采用 [MIT 协议](LICENSE)，这不代表上游图片或元数据使用 MIT 协议。日文原站的注意事项允许参考和编辑，但禁止再分发、转载、转售图片数据，包括加工后的图片，因此仓库不包含这些图片。请参阅[上游说明](docs/UPSTREAM.md)和原站当前条款。
+界面截图中姿势图片的原作：[ギア的日文图库](https://ai-pose-gallery.pages.dev/)（[作者](https://x.com/giaaibusi)）；中文目录：[Anhao 中文版](https://github.com/anhao/ai-pose-gallery-zh)。本插件代码采用 [MIT 协议](LICENSE)，这不代表上游图片或元数据使用 MIT 协议。日文原站的注意事项允许参考和编辑，但禁止再分发、转载、转售图片数据，包括加工后的图片；仓库不包含整套图库素材。请参阅[上游说明](docs/UPSTREAM.md)和原站当前条款。
 
 欢迎任何人提供更多优质的人偶姿势素材，帮助扩充项目；请同时提供素材来源和可纳入、分发的授权。

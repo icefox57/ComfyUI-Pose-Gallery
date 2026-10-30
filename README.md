@@ -4,6 +4,10 @@
 
 Browse pose references in ComfyUI and send a selected image and pose prompt into your workflow. The gallery uses local files based on the Chinese edition: after installation, browsing and execution work without internet access.
 
+![Pose Gallery picker showing pose filters, thumbnails, a selected pose and its camera angles](docs/gallery-picker.png)
+
+Search the gallery, filter poses, compare angles, and choose an image without leaving ComfyUI. The screenshot shows the Chinese interface; English and Japanese interfaces are also available.
+
 ## Installation
 
 Clone this repository into `ComfyUI/custom_nodes/`, restart ComfyUI, and hard-refresh the browser (`Ctrl+F5` on Windows):
@@ -31,6 +35,10 @@ To update, run `git pull` inside the plugin directory, then restart ComfyUI and 
 3. Search or filter by category and angle; click a card to preview and select an angle, then click **Use this image**.
 4. Connect `image` to your reference-image workflow. To use `sd_prompt`, convert a **CLIP Text Encode (Prompt)** node's text widget to an input and connect it.
 
+![Pose Gallery node connected to Preview Image with the selected pose displayed](docs/pose-workflow.png)
+
+The example above connects `image` to **Preview Image** and runs the workflow. The displayed image is the pose reference returned by the node. You can also connect it to a pose preprocessor or another image-reference workflow.
+
 The picker displays 24 pose groups at a time. Load more results with the button, or close it with `Esc`. The selected image ID and language are saved in the workflow. You can also enter an ID such as `full_sexy_P001_front` directly.
 
 | Output | Type | Meaning |
@@ -46,6 +54,6 @@ The interface and filter labels support Chinese, English, and Japanese. Japanese
 
 ## Sources, rights, and contributions
 
-Original pose images: [Japanese gallery by ギア](https://ai-pose-gallery.pages.dev/) ([creator](https://x.com/giaaibusi)); Chinese catalogue: [Anhao's Chinese edition](https://github.com/anhao/ai-pose-gallery-zh). The plugin code is [MIT licensed](LICENSE); this does not grant a licence for the upstream images or metadata. The original gallery's notice permits reference use and editing but prohibits redistribution, reposting, and resale of the image data, including edited images. The repository therefore does not include those images. See [upstream notes](docs/UPSTREAM.md) and the original site's current terms.
+Original pose images shown in the interface screenshots: [Japanese gallery by ギア](https://ai-pose-gallery.pages.dev/) ([creator](https://x.com/giaaibusi)); Chinese catalogue: [Anhao's Chinese edition](https://github.com/anhao/ai-pose-gallery-zh). The plugin code is [MIT licensed](LICENSE); this does not grant a licence for the upstream images or metadata. The original gallery's notice permits reference use and editing but prohibits redistribution, reposting, and resale of the image data, including edited images. The repository does not include the gallery asset collection. See [upstream notes](docs/UPSTREAM.md) and the original site's current terms.
 
 Contributions of more high-quality mannequin pose resources are welcome. Please provide the source and permission to include and distribute each contribution.
