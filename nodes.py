@@ -1,9 +1,8 @@
-"""ComfyUI node and local HTTP routes for online pose selection."""
+"""ComfyUI node and HTTP routes for a local pose gallery."""
 
 from __future__ import annotations
 
 import asyncio
-import io
 import json
 import logging
 
@@ -26,9 +25,9 @@ class PoseGallery:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "pose_id": ("STRING", {"default": "", "tooltip": "Use Browse poses to select an online reference image."}),
-                "source": (["auto", "zh", "ja"], {"default": "auto", "tooltip": "auto: primary source follows language; the other site is the fallback."}),
-                "language": (["zh", "en", "ja"], {"default": "zh", "tooltip": "Gallery interface language. Japanese prefers the Japanese source; Chinese and English prefer Chinese."}),
+                "pose_id": ("STRING", {"default": "", "tooltip": "Use Browse poses to select a local reference image."}),
+                "source": (["auto", "zh", "ja"], {"default": "auto", "tooltip": "Legacy workflow compatibility; images are always loaded locally."}),
+                "language": (["zh", "en", "ja"], {"default": "zh", "tooltip": "Gallery interface language."}),
             }
         }
 
@@ -36,7 +35,7 @@ class PoseGallery:
     RETURN_NAMES = ("image", "pose_name", "source_url", "sd_prompt")
     FUNCTION = "load_pose"
     CATEGORY = "image/Pose Gallery"
-    DESCRIPTION = "Browse online pose references with language-aware source fallback. Outputs the image, pose name, source URL, and concise English SD people/action tags."
+    DESCRIPTION = "Browse a local pose gallery. Outputs the image, localized pose name, local file URI, and concise English SD people/action tags."
 
     def load_pose(self, pose_id, source="auto", language="zh"):
         service = get_service()
@@ -44,9 +43,6 @@ class PoseGallery:
         image = asset_to_image(asset)
         tensor = torch.from_numpy(np.array(image, dtype=np.float32) / 255.0).unsqueeze(0)
         name = service.pose_name(pose_id, source, language)
-        preferred = "ja" if language == "ja" else "zh"
-        if source == "auto" and asset.source != preferred:
-            LOGGER.info("Pose Gallery: using fallback %s source for %s", asset.source, pose_id)
         return (tensor, name, asset.url, get_sd_prompt(pose_id))
 
     @classmethod
@@ -76,13 +72,15 @@ def _json_error(error, status=502):
     return web.json_response({"error": str(error)}, status=status)
 
 
-def _browser_image(asset, kind):
-    # The already validated remote file is re-encoded before it reaches a
-    # browser. Keep decoding and compression off ComfyUI's event loop too.
-    image = asset_to_image(asset)
-    buffer = io.BytesIO()
-    image.save(buffer, format="JPEG" if kind == "thumb" else "PNG")
-    return buffer.getvalue()
+def _browser_image(asset):
+    # The local asset was validated by Pillow; reuse its bytes for fast preview.
+    if asset.data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return asset.data, "image/png"
+    if asset.data.startswith(b"\xff\xd8\xff"):
+        return asset.data, "image/jpeg"
+    if asset.data.startswith(b"RIFF") and asset.data[8:12] == b"WEBP":
+        return asset.data, "image/webp"
+    raise GalleryError("Unsupported local image format.")
 
 
 def register_routes():
@@ -103,8 +101,8 @@ def register_routes():
         except GalleryError as error:
             return _json_error(error)
         except OSError:
-            LOGGER.exception("Pose Gallery cache error")
-            return _json_error("Unable to write the pose cache. Check directory permissions.")
+            LOGGER.exception("Pose Gallery local catalogue error")
+            return _json_error("Unable to read the local pose gallery.")
 
     @routes.get("/pose_gallery/image")
     async def gallery_image(request):
@@ -116,10 +114,10 @@ def register_routes():
             if kind not in ("thumb", "full"):
                 return _json_error("Unknown image kind.", 400)
             asset = await asyncio.to_thread(get_service().get_image, pose_id, kind, source, language)
-            body = await asyncio.to_thread(_browser_image, asset, kind)
+            body, content_type = _browser_image(asset)
             return web.Response(
                 body=body,
-                content_type="image/jpeg" if kind == "thumb" else "image/png",
+                content_type=content_type,
                 headers={
                     "Cache-Control": "private, max-age=3600",
                     "X-Pose-Gallery-Source": asset.source,
@@ -132,7 +130,7 @@ def register_routes():
             return _json_error(error)
         except OSError:
             LOGGER.exception("Pose Gallery image error")
-            return _json_error("Unable to read or write the pose cache.")
+            return _json_error("Unable to read the local pose gallery.")
 
     @routes.post("/pose_gallery/select")
     async def gallery_select(request):
@@ -163,5 +161,5 @@ def register_routes():
         except GalleryError as error:
             return _json_error(error)
         except OSError:
-            LOGGER.exception("Pose Gallery selection cache error")
-            return _json_error("Unable to write the pose cache. Check directory permissions.")
+            LOGGER.exception("Pose Gallery local selection error")
+            return _json_error("Unable to read the local pose gallery.")

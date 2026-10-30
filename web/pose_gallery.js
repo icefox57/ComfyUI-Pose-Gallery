@@ -1,6 +1,6 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
-import { LANGUAGES, normalizeLanguage, preferredSource, t, taxonomy } from "./i18n.js";
+import { LANGUAGES, normalizeLanguage, t, taxonomy } from "./i18n.js";
 
 const PAGE_SIZE = 24;
 const states = new WeakMap();
@@ -20,14 +20,6 @@ function button(text, className, onClick) {
   return result;
 }
 
-function link(text, href) {
-  const result = element("a", "", text);
-  result.href = href;
-  result.target = "_blank";
-  result.rel = "noopener noreferrer";
-  return result;
-}
-
 function loadStyles() {
   if (document.querySelector("link[data-pose-gallery-style]")) return;
   const style = document.createElement("link");
@@ -37,8 +29,8 @@ function loadStyles() {
   document.head.append(style);
 }
 
-export function imageUrl(id, source = "auto", kind = "thumb", language = "zh") {
-  return api.apiURL(`/pose_gallery/image?${new URLSearchParams({ id, source, kind, language: normalizeLanguage(language) })}`);
+export function imageUrl(id, kind = "thumb", language = "zh") {
+  return api.apiURL(`/pose_gallery/image?${new URLSearchParams({ id, kind, language: normalizeLanguage(language) })}`);
 }
 
 export function filterItems(items, filters) {
@@ -88,13 +80,11 @@ export class GalleryDialog {
     this.items = [];
     this.filtered = [];
     this.language = normalizeLanguage(node.widgets?.find((w) => w.name === "language")?.value);
-    this.source = node.widgets?.find((w) => w.name === "source")?.value || "auto";
     this.closed = false;
     this.busy = false;
     this.controllers = new Set();
     this.generation = 0;
     this.previewGeneration = 0;
-    this.catalogWarning = "";
     this.titleId = `pose-gallery-title-${++dialogSequence}`;
     this.returnFocus = document.activeElement;
     this.dialog = element("dialog", "pose-gallery");
@@ -118,19 +108,15 @@ export class GalleryDialog {
   }
 
   text(key, parameters) { return t(this.language, key, parameters); }
-  sourceName(source) { return this.text(source === "ja" ? "sourceJa" : "sourceZh"); }
-
   changeLanguage(language) {
     const code = normalizeLanguage(language);
     const languageWidget = widget(this.node, "language");
-    const sourceWidget = widget(this.node, "source");
-    if (sourceWidget) sourceWidget.value = "auto";
     if (languageWidget) {
       languageWidget.value = code;
       languageWidget.callback?.(code);
     }
     // A node callback updates an attached dialog; standalone dialogs use this path.
-    if (this.language !== code || this.source !== "auto") this.applyLanguage(code);
+    if (this.language !== code) this.applyLanguage(code);
     this.node.setDirtyCanvas?.(true, true);
     app.graph?.setDirtyCanvas?.(true, true);
     app.graph?.change?.();
@@ -139,7 +125,6 @@ export class GalleryDialog {
   applyLanguage(language) {
     if (this.closed) return;
     this.language = normalizeLanguage(language);
-    this.source = "auto";
     this.dialog.setAttribute("lang", this.language);
     this.dialog.replaceChildren();
     this.build();
@@ -155,8 +140,7 @@ export class GalleryDialog {
     heading.append(title, element("p", "", this.text("subtitle")));
     const close = button("×", "pg-close", () => this.close());
     close.setAttribute("aria-label", this.text("close"));
-    const site = preferredSource(this.language) === "ja" ? "https://ai-pose-gallery.pages.dev/" : "https://ai-pose-gallery.anhao.app/";
-    header.append(heading, link(this.text("openSite"), site), close);
+    header.append(heading, close);
 
     const toolbar = element("section", "pg-toolbar");
     const searchRow = element("div", "pg-search-row");
@@ -176,13 +160,9 @@ export class GalleryDialog {
     this.systemFilter = this.addSelect(filters, this.text("system"), this.text("allSystems"));
     this.categoryFilter = this.addSelect(filters, this.text("category"), this.text("allCategories"));
     this.angleFilter = this.addSelect(filters, this.text("angle"), this.text("allAngles"));
-    this.sourceFilter = this.addSelect(filters, this.text("source"), null, "pg-source");
-    this.sourceFilter.append(new Option(this.text(preferredSource(this.language) === "ja" ? "autoJa" : "autoZh"), "auto"), new Option(this.text("sourceZh"), "zh"), new Option(this.text("sourceJa"), "ja"));
-    this.sourceFilter.value = this.source;
     this.systemFilter.addEventListener("change", () => { this.updateCategories(); this.render(); });
     this.categoryFilter.addEventListener("change", () => this.render());
     this.angleFilter.addEventListener("change", () => this.render());
-    this.sourceFilter.addEventListener("change", () => { this.source = this.sourceFilter.value; this.load(); });
     this.languageFilter = this.addSelect(filters, this.text("language"), null, "pg-language");
     this.languageFilter.append(...Object.entries(LANGUAGES).map(([code, name]) => new Option(name, code)));
     this.languageFilter.value = this.language;
@@ -201,10 +181,7 @@ export class GalleryDialog {
     this.sourceStatus = element("span", "pg-source-status");
     this.sourceStatus.setAttribute("role", "status");
     summary.append(this.count, this.sourceStatus);
-    this.warning = element("p", "pg-warning");
-    this.warning.hidden = true;
-    this.warning.setAttribute("role", "status");
-    toolbar.append(searchRow, filters, summary, this.warning);
+    toolbar.append(searchRow, filters, summary);
 
     const body = element("div", "pg-body");
     this.results = element("section", "pg-results");
@@ -218,7 +195,7 @@ export class GalleryDialog {
     this.clearDetail();
     body.append(this.results, this.detail);
     const footer = element("footer", "pg-footer");
-    footer.append(element("span", "", this.text("footerCache")), link(this.text("upstreamLink"), "https://github.com/anhao/ai-pose-gallery-zh"), link(this.text("termsLink"), "https://ai-pose-gallery.pages.dev/"));
+    footer.append(element("span", "", this.text("footerLocal")));
     this.dialog.append(header, toolbar, body, footer);
   }
 
@@ -255,23 +232,16 @@ export class GalleryDialog {
     this.more.hidden = true;
     this.count.textContent = this.text("catalogLoading");
     this.sourceStatus.textContent = "";
-    this.catalogWarning = "";
-    this.warning.hidden = true;
     this.refreshButton.disabled = true;
     const controller = this.controller();
     try {
-      const query = new URLSearchParams({ source: this.source, language: this.language });
+      const query = new URLSearchParams({ language: this.language });
       if (refresh) query.set("refresh", "1");
       const data = await jsonRequest(`/pose_gallery/catalog?${query}`, { signal: controller.signal }, this.language);
       if (this.closed || generation !== this.generation) return;
       if (!Array.isArray(data.items) || !data.items.length) throw new Error(this.text("emptyCatalog"));
       this.items = data.items;
-      this.sourceStatus.textContent = this.text(data.stale ? "cachedCatalog" : "onlineCatalog", { source: this.sourceName(data.source) });
-      const preferred = data.preferred_source || preferredSource(this.language);
-      this.catalogWarning = data.warning || (this.source === "auto" && (data.fallback_used || data.source !== preferred)
-        ? this.text("catalogFallback", { preferred: this.sourceName(preferred), actual: this.sourceName(data.source) }) : "");
-      this.warning.textContent = this.catalogWarning;
-      this.warning.hidden = !this.warning.textContent;
+      this.sourceStatus.textContent = this.text("localCatalog");
       setOptions(this.systemFilter, [...new Set(this.items.map((item) => item.system))], this.text("allSystems"), (value) => taxonomy(this.language, "system", value));
       this.updateCategories();
       setOptions(this.angleFilter, [...new Set(this.items.map((item) => item.angle))], this.text("allAngles"), (value) => taxonomy(this.language, "angle", value));
@@ -330,7 +300,7 @@ export class GalleryDialog {
     image.loading = "lazy";
     image.decoding = "async";
     image.alt = `${item.name} · ${angle}`;
-    image.src = imageUrl(item.id, this.source, "thumb", this.language);
+    image.src = imageUrl(item.id, "thumb", this.language);
     image.addEventListener("error", () => { image.hidden = true; stage.classList.add("pg-image-error"); }, { once: true });
     stage.append(image, element("span", "pg-angle-tag", angle));
     const copy = element("span", "pg-card-copy");
@@ -354,14 +324,12 @@ export class GalleryDialog {
     const previewGeneration = ++this.previewGeneration;
     if (this.previewController) this.previewController.abort();
     if (this.previewBlob) { URL.revokeObjectURL(this.previewBlob); this.previewBlob = null; }
-    this.warning.textContent = this.catalogWarning;
-    this.warning.hidden = !this.catalogWarning;
     this.selected = item;
     this.markSelected();
     const stage = element("div", "pg-preview-stage");
     const image = element("img");
     image.alt = `${item.name} · ${taxonomy(this.language, "angle", item.angle)}`;
-    image.src = imageUrl(item.id, this.source, "thumb", this.language);
+    image.src = imageUrl(item.id, "thumb", this.language);
     const previewStatus = element("span", "pg-preview-status", this.text("originalLoading"));
     previewStatus.setAttribute("role", "status");
     stage.append(image, previewStatus);
@@ -384,7 +352,7 @@ export class GalleryDialog {
     const controller = this.controller();
     this.previewController = controller;
     try {
-      const response = await api.fetchApi(`/pose_gallery/image?${new URLSearchParams({ id: item.id, source: this.source, kind: "full", language: this.language })}`, { signal: controller.signal });
+      const response = await api.fetchApi(`/pose_gallery/image?${new URLSearchParams({ id: item.id, kind: "full", language: this.language })}`, { signal: controller.signal });
       if (!response.ok) {
         let message = `HTTP ${response.status}`;
         try { message = (await response.json()).error || message; } catch { /* Keep the HTTP status. */ }
@@ -395,12 +363,6 @@ export class GalleryDialog {
       this.previewBlob = URL.createObjectURL(blob);
       image.src = this.previewBlob;
       image.onload = () => { if (previewGeneration === this.previewGeneration) previewStatus.hidden = true; };
-      const actualSource = response.headers.get("X-Pose-Gallery-Source");
-      if (this.source === "auto" && actualSource && actualSource !== preferredSource(this.language)) {
-        const imageWarning = this.text("imageFallback", { preferred: this.sourceName(preferredSource(this.language)), actual: this.sourceName(actualSource) });
-        this.warning.textContent = [this.catalogWarning, imageWarning].filter(Boolean).join(" ");
-        this.warning.hidden = false;
-      }
     } catch (error) {
       if (error.name !== "AbortError" && !this.closed && previewGeneration === this.previewGeneration) previewStatus.textContent = this.text("originalError", { error: error.message });
     } finally {
@@ -413,7 +375,6 @@ export class GalleryDialog {
     const generation = this.generation;
     this.busy = true;
     this.useButton.disabled = true;
-    this.sourceFilter.disabled = true;
     this.languageFilter.disabled = true;
     this.refreshButton.disabled = true;
     this.selectionStatus.textContent = this.text("caching");
@@ -421,10 +382,10 @@ export class GalleryDialog {
     try {
       const selection = await jsonRequest("/pose_gallery/select", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: this.selected.id, source: this.source, language: this.language }), signal: controller.signal,
+        body: JSON.stringify({ id: this.selected.id, language: this.language }), signal: controller.signal,
       }, this.language);
       if (this.closed || generation !== this.generation) return;
-      this.onSelected(selection, this.source, this.language);
+      this.onSelected(selection, this.language);
       this.close();
     } catch (error) {
       if (error.name !== "AbortError" && !this.closed && generation === this.generation) this.selectionStatus.textContent = this.text("selectionError", { error: error.message });
@@ -433,7 +394,6 @@ export class GalleryDialog {
       if (generation === this.generation) this.busy = false;
       if (!this.closed && generation === this.generation) {
         this.useButton.disabled = false;
-        this.sourceFilter.disabled = false;
         this.languageFilter.disabled = false;
         this.refreshButton.disabled = false;
       }
@@ -474,13 +434,18 @@ function ensureNodeSize(node) {
 function attachNode(node) {
   if (node.outputs?.length === 3) node.addOutput?.("sd_prompt", "STRING");
   if (states.has(node)) return;
+  // Keep the old serialized widget so existing workflows load in the same order.
+  const legacySource = widget(node, "source");
+  if (legacySource) {
+    legacySource.type = "converted-widget";
+    legacySource.computeSize = () => [0, -4];
+  }
   loadStyles();
   const state = { dialog: null, preview: null, language: normalizeLanguage(widget(node, "language")?.value) };
   states.set(node, state);
   const updatePreview = () => {
     if (!state.preview) return;
     const id = String(widget(node, "pose_id")?.value || "");
-    const source = widget(node, "source")?.value || "auto";
     const language = normalizeLanguage(widget(node, "language")?.value);
     state.preview.replaceChildren();
     if (!id) {
@@ -488,7 +453,7 @@ function attachNode(node) {
     } else {
       const image = element("img");
       image.alt = id;
-      image.src = imageUrl(id, source, "thumb", language);
+      image.src = imageUrl(id, "thumb", language);
       const status = element("p", "pg-id", id);
       image.addEventListener("error", () => { image.hidden = true; status.textContent = t(language, "nodePreviewError", { id }); }, { once: true });
       state.preview.append(image, status);
@@ -497,15 +462,12 @@ function attachNode(node) {
   state.updatePreview = updatePreview;
   const browse = node.addWidget("button", t(state.language, "browse"), null, () => {
     if (state.dialog && !state.dialog.closed) { state.dialog.dialog.focus(); return; }
-    state.dialog = new GalleryDialog(node, (selection, source, language) => {
+    state.dialog = new GalleryDialog(node, (selection, language) => {
       const idWidget = widget(node, "pose_id");
-      const sourceWidget = widget(node, "source");
       if (idWidget) idWidget.value = selection.id;
-      if (sourceWidget) sourceWidget.value = source;
       const languageWidget = widget(node, "language");
       if (languageWidget) languageWidget.value = language;
       idWidget?.callback?.(selection.id);
-      sourceWidget?.callback?.(source);
       updatePreview();
       node.setDirtyCanvas?.(true, true);
       app.graph?.setDirtyCanvas?.(true, true);
@@ -524,20 +486,19 @@ function attachNode(node) {
     previewWidget.computeSize = () => [260, 250];
     previewWidget.serialize = false;
   }
-  for (const name of ["pose_id", "source"]) {
+  for (const name of ["pose_id"]) {
     const field = widget(node, name);
     if (!field) continue;
     const previous = field.callback;
     field.callback = function (...args) { const value = previous?.apply(this, args); updatePreview(); return value; };
   }
-  state.syncLanguage = (resetSource = false) => {
+  state.syncLanguage = (refreshDialog = false) => {
     const language = normalizeLanguage(widget(node, "language")?.value);
     const changed = state.language !== language;
     state.language = language;
-    if (resetSource && widget(node, "source")) widget(node, "source").value = "auto";
     browse.name = t(language, "browse");
     browse.label = browse.name;
-    for (const [name, label, tooltip] of [["pose_id", "nodePoseId", "poseIdTooltip"], ["source", "nodeSource", "sourceTooltip"], ["language", "nodeLanguage", "languageTooltip"]]) {
+    for (const [name, label, tooltip] of [["pose_id", "nodePoseId", "poseIdTooltip"], ["language", "nodeLanguage", "languageTooltip"]]) {
       const field = widget(node, name);
       if (!field) continue;
       field.label = t(language, label);
@@ -549,7 +510,7 @@ function attachNode(node) {
       if (node.outputs?.[index]) node.outputs[index].label = t(language, key);
     }
     updatePreview();
-    if (state.dialog && !state.dialog.closed && (changed || resetSource)) state.dialog.applyLanguage(language);
+    if (state.dialog && !state.dialog.closed && (changed || refreshDialog)) state.dialog.applyLanguage(language);
     node.setDirtyCanvas?.(true, true);
   };
   const languageWidget = widget(node, "language");

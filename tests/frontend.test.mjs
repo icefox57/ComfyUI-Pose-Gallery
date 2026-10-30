@@ -116,7 +116,7 @@ function makeDocument() {
   return { document, Option };
 }
 
-function environment(fetchApi = async () => response({ items: rows, source: "zh", stale: false, warning: "" })) {
+function environment(fetchApi = async () => response({ items: rows, source: "local", stale: false, warning: "" })) {
   const { document, Option } = makeDocument();
   const requests = [];
   const app = {
@@ -134,7 +134,7 @@ function environment(fetchApi = async () => response({ items: rows, source: "zh"
     .replace(/^import .*;\r?\n/gm, "")
     .replace(/\bexport (?=(?:function|class)\b)/g, "")
     .replace(/import\.meta\.url/g, JSON.stringify("https://localhost/extensions/pose-gallery/pose_gallery.js"));
-  vm.runInContext(`${source}\nglobalThis.subject = { GalleryDialog, filterItems, groupItems, imageUrl, LANGUAGES, MESSAGES, normalizeLanguage, preferredSource, t, taxonomy };`, context, { filename: "pose_gallery.js" });
+  vm.runInContext(`${source}\nglobalThis.subject = { GalleryDialog, filterItems, groupItems, imageUrl, LANGUAGES, MESSAGES, normalizeLanguage, t, taxonomy };`, context, { filename: "pose_gallery.js" });
   return { ...context.subject, app, api, document, requests };
 }
 
@@ -161,23 +161,25 @@ test("search requires every word and combines with system, category, and angle f
 
 test("image URLs preserve reverse-proxy prefixes and encode input parameters", () => {
   const env = environment();
-  const url = env.imageUrl("pose&bad=1", "ja", "full");
+  const url = env.imageUrl("pose&bad=1", "full", "ja");
   assert.ok(url.startsWith("/comfy/proxy/pose_gallery/image?"));
   const query = new URL(url, "http://localhost").searchParams;
   assert.equal(query.get("id"), "pose&bad=1");
-  assert.equal(query.get("source"), "ja");
+  assert.equal(query.get("source"), null);
   assert.equal(query.get("kind"), "full");
-  assert.equal(query.get("language"), "zh");
+  assert.equal(query.get("language"), "ja");
   assert.equal(query.get("bad"), null);
 });
 
-test("opening a gallery requests a catalog and lazy thumbnails, without downloading every original", async () => {
+test("opening a local gallery requests its catalog and lazy thumbnails", async () => {
   const env = environment();
   const gallery = new env.GalleryDialog(bareNode(), () => {});
   await settle();
   assert.equal(gallery.grid.querySelectorAll(".pg-card").length, 2);
   assert.equal(env.requests.length, 1);
-  assert.ok(env.requests[0].path.startsWith("/pose_gallery/catalog?source=auto"));
+  assert.ok(env.requests[0].path.startsWith("/pose_gallery/catalog?language=zh"));
+  assert.equal(gallery.sourceStatus.textContent, "本地图册");
+  assert.equal(gallery.dialog.querySelector(".pg-source"), null);
   for (const image of gallery.grid.querySelectorAll("img")) {
     assert.equal(image.loading, "lazy");
     assert.equal(new URL(image.src, "http://localhost").searchParams.get("kind"), "thumb");
@@ -185,53 +187,21 @@ test("opening a gallery requests a catalog and lazy thumbnails, without download
   gallery.close();
 });
 
-test("source switching aborts the previous request and ignores its late catalog response", async () => {
+test("refreshing the local catalogue aborts and ignores a late previous response", async () => {
   const pending = [];
   const env = environment(() => { const request = deferred(); pending.push(request); return request.promise; });
   const gallery = new env.GalleryDialog(bareNode(), () => {});
-  gallery.source = "ja";
-  const secondLoad = gallery.load();
+  const secondLoad = gallery.load(true);
   assert.equal(env.requests[0].options.signal.aborted, true);
-  assert.equal(new URL(env.requests[1].path, "http://localhost").searchParams.get("source"), "ja");
-  const japanese = [{ ...rows[2], name: "日本語のポーズ" }];
-  pending[1].resolve(response({ items: japanese, source: "ja", stale: false, warning: "" }));
+  assert.equal(new URL(env.requests[1].path, "http://localhost").searchParams.get("refresh"), "1");
+  const updated = [{ ...rows[2], name: "更新的本地姿势" }];
+  pending[1].resolve(response({ items: updated, source: "local", stale: false, warning: "" }));
   await secondLoad;
   pending[0].resolve(response({ items: rows, source: "zh", stale: false, warning: "" }));
   await settle();
   assert.equal(gallery.items.length, 1);
-  assert.equal(gallery.items[0].name, "日本語のポーズ");
-  assert.match(gallery.sourceStatus.textContent, /日文站/);
-  gallery.close();
-});
-
-test("individual-image failover warning clears when the next image comes from the Chinese source", async () => {
-  let imageSource = "ja";
-  const env = environment(async (path) => path.startsWith("/pose_gallery/catalog")
-    ? response({ items: rows, source: "zh", stale: false, warning: "" })
-    : response({}, { source: imageSource }));
-  const gallery = new env.GalleryDialog(bareNode(), () => {});
-  await settle();
-  await gallery.showDetail(rows[0]);
-  assert.equal(gallery.warning.hidden, false);
-  assert.match(gallery.warning.textContent, /此图片.*日文站/);
-  assert.match(gallery.sourceStatus.textContent, /中文站/);
-  imageSource = "zh";
-  await gallery.showDetail(rows[2]);
-  assert.equal(gallery.warning.hidden, true);
-  assert.equal(gallery.warning.textContent, "");
-  gallery.close();
-});
-
-test("catalog fallback and stale-cache warnings survive changing the preview", async () => {
-  const env = environment(async (path) => path.startsWith("/pose_gallery/catalog")
-    ? response({ items: rows, source: "ja", stale: true, warning: "Both websites offline; using cached catalog." })
-    : response({}, { source: "zh" }));
-  const gallery = new env.GalleryDialog(bareNode(), () => {});
-  await settle();
-  await gallery.showDetail(rows[0]);
-  assert.equal(gallery.warning.hidden, false);
-  assert.match(gallery.warning.textContent, /Both websites offline/);
-  assert.match(gallery.sourceStatus.textContent, /已缓存目录/);
+  assert.equal(gallery.items[0].name, "更新的本地姿势");
+  assert.equal(gallery.sourceStatus.textContent, "本地图册");
   gallery.close();
 });
 
@@ -305,12 +275,14 @@ test("node hooks preserve previous callbacks and restore thumbnails without addi
   assert.equal(node.widgets.filter((entry) => entry.options?.serialize !== false && entry.serialize !== false).length, 3);
   const preview = node.domWidgets[0].element.querySelector("img");
   assert.equal(new URL(preview.src, "http://localhost").searchParams.get("id"), rows[2].id);
-  assert.equal(new URL(preview.src, "http://localhost").searchParams.get("source"), "ja");
+  assert.equal(new URL(preview.src, "http://localhost").searchParams.get("source"), null);
+  assert.equal(node.widgets[1].type, "converted-widget");
+  assert.deepEqual([...node.widgets[1].computeSize()], [0, -4]);
   assert.equal(node.onRemoved(), "previous-removed");
   assert.deepEqual(node.original, ["created", "configured", "removed"]);
 });
 
-test("selecting commits node pose/source only after the original is cached, and failed selection preserves the old pose", async () => {
+test("selection validates the local original before updating the saved pose", async () => {
   const selection = deferred();
   let fail = true;
   const env = environment(async (path) => {
@@ -331,10 +303,7 @@ test("selecting commits node pose/source only after the original is cached, and 
   node.widgets.find((entry) => entry.type === "button").callback();
   await settle();
   const dialog = env.document.body.querySelector("dialog");
-  const sourceSelect = dialog.querySelector(".pg-source").querySelector("select");
-  sourceSelect.value = "auto";
-  await sourceSelect.fire("change");
-  await settle();
+  assert.equal(dialog.querySelector(".pg-source"), null);
   await dialog.querySelector(".pg-card").fire("click");
   await dialog.querySelector(".pg-use").fire("click");
   assert.equal(node.widgets[0].value, "old_front");
@@ -346,12 +315,12 @@ test("selecting commits node pose/source only after the original is cached, and 
   selection.resolve(response({ id: rows[1].id, source: "ja", cached: true }));
   await use;
   assert.equal(node.widgets[0].value, rows[1].id);
-  assert.equal(node.widgets[1].value, "auto"); // Preserve automatic failover on later workflow runs.
+  assert.equal(node.widgets[1].value, "zh"); // Hidden legacy widget remains serialized.
   assert.equal(dialog.isConnected, false);
   assert.equal(env.app.graph.changes, 1);
   const request = env.requests.find((entry) => entry.path === "/pose_gallery/select");
   assert.equal(JSON.parse(request.options.body).id, rows[1].id);
-  assert.equal(JSON.parse(request.options.body).source, "auto");
+  assert.equal(JSON.parse(request.options.body).source, undefined);
   assert.equal(JSON.parse(request.options.body).language, "zh");
 });
 
@@ -408,8 +377,6 @@ test("all three message dictionaries have exact key/placeholder parity and Engli
   }
   assert.equal(env.normalizeLanguage(undefined), "zh");
   assert.equal(env.normalizeLanguage("unsupported"), "zh");
-  assert.equal(env.preferredSource("ja"), "ja");
-  assert.equal(env.preferredSource("en"), "zh");
 });
 
 for (const language of ["zh", "en", "ja"]) {
@@ -417,9 +384,9 @@ for (const language of ["zh", "en", "ja"]) {
     const canonical = [{ ...rows[1], system: "全身单人・标准系" }];
     let failSelection = true;
     const env = environment(async (path) => {
-      if (path.startsWith("/pose_gallery/catalog")) return response({ items: canonical, source: language === "ja" ? "ja" : "zh", stale: false });
-      if (path === "/pose_gallery/select") return failSelection ? response({ error: "DETAIL" }, { status: 502 }) : response({ id: canonical[0].id, source: language === "ja" ? "ja" : "zh", cached: true });
-      return response({}, { source: language === "ja" ? "ja" : "zh" });
+      if (path.startsWith("/pose_gallery/catalog")) return response({ items: canonical, source: "local", stale: false });
+      if (path === "/pose_gallery/select") return failSelection ? response({ error: "DETAIL" }, { status: 502 }) : response({ id: canonical[0].id, source: "local", cached: true });
+      return response({}, { source: "local" });
     });
     const node = bareNode("", "auto", language);
     let selection;
@@ -432,7 +399,8 @@ for (const language of ["zh", "en", "ja"]) {
     assert.equal(gallery.results.getAttribute("aria-label"), env.t(language, "resultsLabel"));
     assert.equal(gallery.detail.getAttribute("aria-label"), env.t(language, "previewLabel"));
     assert.equal(gallery.count.textContent, env.t(language, "count", { groups: 1, images: 1 }));
-    assert.equal(gallery.sourceFilter.children[0].textContent, env.t(language, language === "ja" ? "autoJa" : "autoZh"));
+    assert.equal(gallery.sourceStatus.textContent, env.t(language, "localCatalog"));
+    assert.equal(gallery.dialog.querySelector(".pg-source"), null);
     assert.equal(gallery.systemFilter.children[1].textContent, env.taxonomy(language, "system", canonical[0].system));
     assert.equal(gallery.categoryFilter.children[1].textContent, env.taxonomy(language, "category", canonical[0].category));
     assert.equal(gallery.angleFilter.children[1].textContent, env.taxonomy(language, "angle", canonical[0].angle));
@@ -451,7 +419,7 @@ for (const language of ["zh", "en", "ja"]) {
     }
     failSelection = false;
     await gallery.select();
-    assert.equal(selection[2], language);
+    assert.equal(selection[1], language);
     const selectedRequest = env.requests.filter((request) => request.path === "/pose_gallery/select").at(-1);
     assert.equal(JSON.parse(selectedRequest.options.body).language, language);
     assert.equal(gallery.closed, true);
@@ -467,8 +435,8 @@ test("taxonomy labels translate both upstream languages and make localized categ
   assert.equal(env.filterItems([{ ...rows[0], angle: "俯视", search: "" }], { language: "en", query: "standing high" }).length, 1);
 });
 
-test("changing gallery language immediately persists the node setting, resets a strict source and keeps the saved pose ID", async () => {
-  const env = environment(async (path) => response({ items: rows, source: new URL(path, "http://localhost").searchParams.get("language") === "ja" ? "ja" : "zh" }));
+test("changing gallery language preserves the saved pose and the hidden legacy widget", async () => {
+  const env = environment(async () => response({ items: rows, source: "local" }));
   const node = await registeredNode(env, { id: "keep_saved_front", source: "zh" });
   node.widgets.find((entry) => entry.type === "button").callback();
   await settle();
@@ -478,15 +446,16 @@ test("changing gallery language immediately persists the node setting, resets a 
   await languageSelect.fire("change");
   await settle();
   assert.equal(node.widgets.find((entry) => entry.name === "language").value, "ja");
-  assert.equal(node.widgets.find((entry) => entry.name === "source").value, "auto");
+  assert.equal(node.widgets.find((entry) => entry.name === "source").value, "zh");
+  assert.equal(node.widgets.find((entry) => entry.name === "source").type, "converted-widget");
   assert.equal(node.widgets.find((entry) => entry.name === "pose_id").value, "keep_saved_front");
   assert.equal(node.widgets.find((entry) => entry.type === "button").name, "ポーズを選択");
   assert.equal(dialog.querySelector("h2").textContent, "ポーズギャラリー");
   const latestCatalog = env.requests.filter((request) => request.path.startsWith("/pose_gallery/catalog")).at(-1);
   const query = new URL(latestCatalog.path, "http://localhost").searchParams;
   assert.equal(query.get("language"), "ja");
-  assert.equal(query.get("source"), "auto");
-  assert.equal(dialog.querySelector(".pg-source").querySelector("select").children[0].textContent, env.t("ja", "autoJa"));
+  assert.equal(query.get("source"), null);
+  assert.equal(dialog.querySelector(".pg-source"), null);
   const preview = node.widgets.find((entry) => entry.name === "pose_gallery_preview").element.querySelector("img");
   assert.equal(new URL(preview.src, "http://localhost").searchParams.get("language"), "ja");
   const serialized = node.widgets.filter((entry) => entry.options?.serialize !== false && entry.serialize !== false);
@@ -494,7 +463,7 @@ test("changing gallery language immediately persists the node setting, resets a 
   node.onRemoved();
 });
 
-test("node language callback updates labels and previews in all languages, restores auto source, and preserves legacy Chinese defaults", async () => {
+test("node language callback updates labels and previews while preserving legacy values", async () => {
   const env = environment();
   const node = await registeredNode(env, { id: rows[0].id, source: "ja" });
   const languageField = node.widgets.find((entry) => entry.name === "language");
@@ -502,7 +471,7 @@ test("node language callback updates labels and previews in all languages, resto
     node.widgets.find((entry) => entry.name === "source").value = "ja";
     languageField.callback(language);
     assert.equal(languageField.value, language);
-    assert.equal(node.widgets.find((entry) => entry.name === "source").value, "auto");
+    assert.equal(node.widgets.find((entry) => entry.name === "source").value, "ja");
     assert.equal(node.widgets.find((entry) => entry.type === "button").name, env.t(language, "browse"));
     assert.equal(node.widgets[0].label, env.t(language, "nodePoseId"));
     assert.equal(node.outputs[0].label, env.t(language, "outputImage"));
@@ -517,21 +486,6 @@ test("node language callback updates labels and previews in all languages, resto
   await settle();
   assert.equal(new URL(env.requests.at(-1).path, "http://localhost").searchParams.get("language"), "zh");
   legacy.onRemoved();
-});
-
-test("Japanese auto mode warns only when an image falls back to Chinese", async () => {
-  let actual = "ja";
-  const env = environment(async (path) => path.startsWith("/pose_gallery/catalog")
-    ? response({ items: rows, source: "ja", preferred_source: "ja", fallback_used: false }) : response({}, { source: actual }));
-  const gallery = new env.GalleryDialog(bareNode("", "auto", "ja"), () => {});
-  await settle();
-  await gallery.showDetail(rows[0]);
-  assert.equal(gallery.warning.hidden, true);
-  actual = "zh";
-  await gallery.showDetail(rows[1]);
-  assert.equal(gallery.warning.textContent, env.t("ja", "imageFallback", { preferred: env.t("ja", "sourceJa"), actual: env.t("ja", "sourceZh") }));
-  assert.equal(gallery.warning.hidden, false);
-  gallery.close();
 });
 
 test("a language change aborts an in-flight selection and rejects its late result", async () => {
@@ -553,7 +507,7 @@ test("a language change aborts an in-flight selection and rejects its late resul
   pendingSelection.resolve(response({ id: rows[1].id, source: "zh", cached: true }));
   await pending;
   assert.equal(node.widgets[0].value, "keep_saved_front");
-  assert.equal(node.widgets[1].value, "auto");
+  assert.equal(node.widgets[1].value, "zh");
   assert.equal(dialog.isConnected, true);
   assert.equal(dialog.getAttribute("lang"), "ja");
   node.onRemoved();

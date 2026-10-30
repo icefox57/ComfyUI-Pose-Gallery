@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0
+
+- Read the Chinese-based pose catalogue, thumbnails, and original images locally, with no network requests during browsing or execution.
+- Preserve Chinese, English, and Japanese UI and locally stored Japanese titles.
+- Preserve the output order and legacy `source` input; `source_url` now returns a local file URI.
+
 ## 0.3.0
 
 - Appended the `sd_prompt` string output while preserving the first three output positions.

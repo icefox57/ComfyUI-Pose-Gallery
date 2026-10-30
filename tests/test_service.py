@@ -1,143 +1,137 @@
-"""Offline contract tests; no upstream images or metadata are distributed."""
+"""Local-gallery behavior, including legacy workflows and offline operation."""
 import io
 import json
+import os
+from pathlib import Path
 import tempfile
 import unittest
-from pathlib import Path
+from unittest.mock import patch
 
 from PIL import Image
 
-from pose_gallery_service import GalleryService
+from pose_gallery_service import GalleryError, GalleryInputError, GalleryService, default_assets_directory
 
 
 POSE_ID = "example_P001_front"
 
 
-def catalog(language="zh"):
-    if language == "zh":
-        return [{"id": POSE_ID, "体系": "测试体系", "姿势编号": "P001",
-                 "分类": "测试分类", "姿势名称": "测试姿势", "角度": "正面",
-                 "缩略图": "thumbs/" + POSE_ID + ".jpg", "原图": "img/" + POSE_ID + ".png"}]
-    return [{"id": POSE_ID, "系統": "テスト", "ポーズ番号": "P001",
-             "分類": "テスト", "ポーズ名": "テストポーズ", "アングル": "正面",
-             "サムネ": "thumbs/" + POSE_ID + ".jpg", "原寸": "img/" + POSE_ID + ".png"}]
+def png_bytes(color=(64, 128, 192)):
+    output = io.BytesIO()
+    Image.new("RGB", (30, 40), color).save(output, format="PNG")
+    return output.getvalue()
 
 
-def image_bytes():
-    data = io.BytesIO()
-    Image.new("RGB", (3, 4), (64, 128, 192)).save(data, format="PNG")
-    return data.getvalue()
+def catalogue(name="测试姿势"):
+    return [{"id": POSE_ID, "体系": "测试体系", "姿势编号": "P001",
+             "分类": "站姿", "姿势名称": name, "角度": "正面", "检索": "测试"}]
 
 
-class FakeUpstream:
-    def __init__(self):
-        self.requests = []
-        self.fail_zh = False
-        self.fail_ja = False
-        self.corrupt_zh_image = False
-        self.broken_zh_catalog = False
-
-    def __call__(self, url, max_bytes):
-        self.requests.append(url)
-        zh = "anhao.app" in url
-        if (zh and self.fail_zh) or (not zh and self.fail_ja):
-            raise OSError("simulated upstream unavailable")
-        if "/data/" in url or url.endswith("pages.dev/"):
-            if zh and self.broken_zh_catalog:
-                return b"<html>unexpected proxy page</html>"
-            data = json.dumps(catalog("zh" if zh else "ja"), ensure_ascii=False)
-            return data.encode("utf-8") if zh else ("<!doctype html><script>const D=" + data + ";const ANG=[];</script>").encode("utf-8")
-        if zh and self.corrupt_zh_image:
-            return b"this is not an image"
-        return image_bytes()
-
-
-class GalleryServiceTests(unittest.TestCase):
+class LocalGalleryTests(unittest.TestCase):
     def setUp(self):
         runtime = Path(__file__).resolve().parents[1] / ".runtime"
         runtime.mkdir(exist_ok=True)
-        self.temp = tempfile.TemporaryDirectory(dir=runtime)
-        self.addCleanup(self.temp.cleanup)
-        self.fetch = FakeUpstream()
-        self.service = GalleryService(cache_dir=Path(self.temp.name), fetcher=self.fetch)
+        self.temporary = tempfile.TemporaryDirectory(dir=runtime)
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        (self.root / "img").mkdir()
+        (self.root / "thumbs").mkdir()
+        (self.root / "pose-zh.json").write_text(json.dumps(catalogue(), ensure_ascii=False), encoding="utf-8")
+        japanese = {POSE_ID: {"name": "テストポーズ", "angle": "正面"}}
+        (self.root / "pose-ja.json").write_text(json.dumps(japanese, ensure_ascii=False), encoding="utf-8")
+        self.image = png_bytes()
+        (self.root / "img" / (POSE_ID + ".png")).write_bytes(self.image)
+        with Image.new("RGB", (12, 16), (64, 128, 192)) as image:
+            image.save(self.root / "thumbs" / (POSE_ID + ".jpg"))
+        self.gallery = GalleryService(self.root)
 
-    def test_chinese_catalog_normalization(self):
-        result = self.service.get_catalog()
-        self.assertEqual(result["source"], "zh")
-        self.assertFalse(result["stale"])
-        item = result["items"][0]
+    def test_catalogue_and_images_work_with_network_disabled(self):
+        with patch("socket.socket", side_effect=AssertionError("Network access is forbidden")):
+            for language in ("zh", "en", "ja"):
+                for legacy_source in ("auto", "zh", "ja"):
+                    with self.subTest(language=language, source=legacy_source):
+                        catalog = self.gallery.get_catalog(legacy_source, language=language)
+                        self.assertEqual(catalog["source"], "local")
+                        expected_name = "テストポーズ" if language == "ja" else "测试姿势"
+                        self.assertEqual(catalog["items"][0]["name"], expected_name)
+                        asset = self.gallery.get_image(POSE_ID, "full", legacy_source, language)
+                        self.assertEqual(asset.source, "local")
+                        self.assertEqual(asset.data, self.image)
+                        self.assertEqual((asset.width, asset.height), (30, 40))
+                        self.assertTrue(asset.url.startswith("file:"))
+                        selected = self.gallery.select(POSE_ID, legacy_source, language)
+                        self.assertEqual(selected["name"], expected_name + " · 正面")
+                        self.assertEqual(selected["source_url"], asset.url)
+
+    def test_normalized_labels_and_image_ids_are_preserved(self):
+        item = self.gallery.get_catalog()["items"][0]
         self.assertEqual(item["id"], POSE_ID)
-        self.assertEqual(item["name"], "测试姿势")
-        self.assertEqual(item["angle"], "正面")
         self.assertEqual(item["group"], "example_P001")
-        self.assertTrue(item["image"].endswith("/img/" + POSE_ID + ".png"))
+        self.assertEqual(item["category"], "站姿")
+        self.assertEqual(item["thumbnail"], "thumbs/" + POSE_ID + ".jpg")
+        self.assertEqual(item["image"], "img/" + POSE_ID + ".png")
 
-    def test_catalog_switches_to_japanese_on_network_failure(self):
-        self.fetch.fail_zh = True
-        result = self.service.get_catalog()
-        self.assertEqual(result["source"], "ja")
-        self.assertEqual(result["items"][0]["name"], "テストポーズ")
-        self.assertTrue(result["warning"])
+    def test_missing_thumbnail_is_generated_in_memory_without_network_or_disk_write(self):
+        thumbnail = self.root / "thumbs" / (POSE_ID + ".jpg")
+        thumbnail.unlink()
+        with patch("socket.socket", side_effect=AssertionError("Network access is forbidden")):
+            asset = self.gallery.get_image(POSE_ID, "thumb")
+        self.assertEqual(asset.source, "local")
+        self.assertEqual(Image.open(io.BytesIO(asset.data)).size, (30, 40))
+        self.assertFalse(thumbnail.exists())
 
-    def test_invalid_catalog_switches_to_japanese(self):
-        self.fetch.broken_zh_catalog = True
-        self.assertEqual(self.service.get_catalog()["source"], "ja")
+    def test_missing_and_damaged_images_fail_without_trying_another_site(self):
+        (self.root / "img" / (POSE_ID + ".png")).unlink()
+        with patch("socket.socket", side_effect=AssertionError("Network access is forbidden")):
+            with self.assertRaisesRegex(GalleryError, "Local image"):
+                self.gallery.get_image(POSE_ID, source="ja", language="ja")
+            (self.root / "img" / (POSE_ID + ".png")).write_bytes(b"not an image")
+            with self.assertRaises(GalleryError):
+                self.gallery.get_image(POSE_ID)
 
-    def test_full_image_fallback_preserves_selected_id(self):
-        self.fetch.fail_zh = True
-        result = self.service.select(POSE_ID)
-        self.assertEqual(result["id"], POSE_ID)
-        self.assertEqual(result["source"], "ja")
-        self.assertEqual((result["width"], result["height"]), (3, 4))
-        self.assertIn("/img/" + POSE_ID + ".png", result["source_url"])
+    def test_catalogue_changes_are_observed_and_update_the_node_fingerprint(self):
+        self.assertEqual(self.gallery.pose_name(POSE_ID), "测试姿势 · 正面")
+        before = self.gallery.image_fingerprint(POSE_ID)
+        path = self.root / "pose-zh.json"
+        path.write_text(json.dumps(catalogue("新的中文姿势"), ensure_ascii=False), encoding="utf-8")
+        self.assertEqual(self.gallery.pose_name(POSE_ID, language="zh"), "新的中文姿势 · 正面")
+        self.assertEqual(self.gallery.pose_name(POSE_ID, language="ja"), "テストポーズ · 正面")
+        self.assertNotEqual(before, self.gallery.image_fingerprint(POSE_ID))
+        self.assertEqual(self.gallery.get_catalog(refresh=True)["items"][0]["name"], "新的中文姿势")
 
-    def test_corrupt_image_triggers_fallback(self):
-        self.fetch.corrupt_zh_image = True
-        result = self.service.get_image(POSE_ID)
-        self.assertEqual(result.source, "ja")
-        self.assertEqual((result.width, result.height), (3, 4))
+    def test_missing_catalogue_provides_actionable_error(self):
+        (self.root / "pose-zh.json").unlink()
+        with self.assertRaisesRegex(GalleryError, "local Chinese catalogue"):
+            self.gallery.get_catalog()
+        self.assertEqual(self.gallery.pose_name(POSE_ID), POSE_ID)
 
-    def test_thumbnail_fallback(self):
-        self.fetch.fail_zh = True
-        result = self.service.get_image(POSE_ID, kind="thumb")
-        self.assertEqual(result.source, "ja")
-        self.assertTrue(result.url.endswith("/thumbs/" + POSE_ID + ".jpg"))
+    def test_invalid_parameters_and_escaping_paths_are_rejected(self):
+        for value in ("../secret", "a/b", "https://example.org/a", "", "a?b", "a\\b", None):
+            with self.subTest(pose_id=value), self.assertRaises(GalleryInputError):
+                self.gallery.get_image(value)
+        for value in ("invalid", [], None):
+            with self.subTest(language=value), self.assertRaises(GalleryInputError):
+                self.gallery.get_catalog(language=value)
+        with self.assertRaises(GalleryInputError):
+            self.gallery.get_image(POSE_ID, kind="bad-kind")
+        with self.assertRaises(GalleryInputError):
+            self.gallery.get_image(POSE_ID, source="bad-source")
 
-    def test_manual_source_does_not_silently_switch(self):
-        self.fetch.fail_zh = True
-        with self.assertRaises(Exception):
-            self.service.get_catalog("zh")
-        self.assertFalse(any("pages.dev" in url for url in self.fetch.requests))
+    def test_optional_asset_directory_override(self):
+        with patch.dict(os.environ, {"POSE_GALLERY_ASSETS_DIR": str(self.root)}):
+            self.assertEqual(default_assets_directory(), self.root)
+            self.assertEqual(GalleryService().get_image(POSE_ID).data, self.image)
 
-    def test_full_image_cache_survives_restart_without_catalog(self):
-        original = self.service.get_image(POSE_ID)
-        self.fetch.fail_zh = self.fetch.fail_ja = True
-        self.fetch.requests.clear()
-        restarted = GalleryService(cache_dir=Path(self.temp.name), fetcher=self.fetch)
-        result = restarted.get_image(POSE_ID)
-        self.assertEqual(result.data, original.data)
-        self.assertTrue(result.cached)
-        self.assertFalse(self.fetch.requests)
+    def test_japanese_labels_are_local_and_optional(self):
+        with patch("socket.socket", side_effect=AssertionError("Network access is forbidden")):
+            self.assertEqual(self.gallery.pose_name(POSE_ID, language="ja"), "テストポーズ · 正面")
+            self.assertEqual(self.gallery.get_catalog(language="ja")["items"][0]["name"], "テストポーズ")
+            (self.root / "pose-ja.json").unlink()
+            self.assertEqual(self.gallery.pose_name(POSE_ID, language="ja"), "测试姿势 · 正面")
 
-    def test_last_catalog_remains_available_offline(self):
-        self.service.get_catalog()
-        self.fetch.fail_zh = self.fetch.fail_ja = True
-        restarted = GalleryService(cache_dir=Path(self.temp.name), fetcher=self.fetch)
-        result = restarted.get_catalog(refresh=True)
-        self.assertTrue(result["stale"])
-        self.assertEqual(result["items"][0]["id"], POSE_ID)
-        self.assertTrue(result["warning"])
-
-    def test_path_url_and_bad_source_inputs_rejected_before_network(self):
-        for pose_id in ["../secret", "a/b", "https://example.org/a", "", "a?b", "a\\b"]:
-            with self.subTest(pose_id=pose_id):
-                with self.assertRaises((ValueError, RuntimeError)):
-                    self.service.get_image(pose_id)
-        with self.assertRaises((ValueError, RuntimeError)):
-            self.service.get_catalog("bad-source")
-        with self.assertRaises((ValueError, RuntimeError)):
-            self.service.get_image(POSE_ID, kind="bad-kind")
-        self.assertFalse(self.fetch.requests)
+    def test_replaced_image_changes_the_fingerprint(self):
+        before = self.gallery.image_fingerprint(POSE_ID)
+        (self.root / "img" / (POSE_ID + ".png")).write_bytes(png_bytes((255, 0, 0)))
+        self.assertNotEqual(before, self.gallery.image_fingerprint(POSE_ID))
 
 
 if __name__ == "__main__":
